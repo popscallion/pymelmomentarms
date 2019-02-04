@@ -1,4 +1,5 @@
 ### calculate muscle moment arms w/r/t a defined joint center
+### JOINT CENTER MUST BE POINT+AIM CONSTRAINED, PARENTING IS DEATH. OR FREEZE TRANSFORMATIONS
 from pymel.all import *
 import pymel.core.datatypes as dt
 
@@ -14,24 +15,22 @@ def getMuscleName():
     muscname = promptDialog(query=True, text=True)
     return muscname
 
-### check to see if muscle material exists. if yes, do nothing. if no, make one.   
+### check to see if muscle material exists. if yes, do nothing. if not, make one.   
 ### maya assigns materials(shaders) by adding meshes to a shader group, which must first be created
 def assignMuscleColor(target):
     if objExists(target):
-        if objExists("muscleMat"):
-            print("Muscle material already exists!")
-            muscleMaterial = "muscleMat"
-            muscleMaterialSG = "muscleMatSG"
-        else:
+        if not objExists("muscleMat"):
             muscleMaterial = shadingNode("lambert", asShader=True, name="muscleMat")
             muscleMaterialSG = sets(renderable=True, noSurfaceShader=True, empty=True, name="muscleMatSG" )
             muscleMaterial.color.set(0.604, 0.036, 0.014)
             muscleMaterial.transparency.set(0.5, 0.5, 0.5)
-            muscleMaterial.outColor >> muscleMaterialSG.surfaceShader
+            muscleMaterial.outColor >> muscleMaterialSG.surfaceShader            
+        else:
+            print("Muscle material already exists!")
+            muscleMaterial = "muscleMat"
+            muscleMaterialSG = "muscleMatSG"
         sets(muscleMaterialSG, edit=True, forceElement=target)
-
             
-
 ### get currently selected objects in order: 
 ### 1. joint center, 2. muscle marker #1, 3. muscle marker #2
 def getSelectionSet():
@@ -40,15 +39,15 @@ def getSelectionSet():
     return sel
 
 ### make muscle vector with selected locators
-def makeMuscleVector(sel):
-    posMuscle1 = sel[1].translate.get()
-    posMuscle2 = sel[2].translate.get()
-    muscleVect = posMuscle1 - posMuscle2
+def makeVector(A,B):   
+    posA = A.translate.get()
+    posB = B.translate.get()
+    vectAB = posB - posA  
     # make measure tool to visualize muscle
-    ## distanceDimension(sp=posMuscle1,ep=posMuscle2)
+    ## distanceDimension(sp=posA,ep=posB)
     # check to see if the vector was correctly calculated
-    ## distanceDimension(sp=posMuscle2,ep=(muscleVect[0]+posMuscle2[0],muscleVect[1]+posMuscle2[1],muscleVect[2]+posMuscle2[2]))
-    return muscleVect
+    ## distanceDimension(sp=posB,ep=(VectAB[0]+posB[0],VectAB[1]+posB[1],VectAB[2]+posB[2]))
+    return vectAB
 
 ### make muscle cylinder for visualization
 def makeMuscleCyl(sel,muscleName):
@@ -68,10 +67,48 @@ def makeMuscleCyl(sel,muscleName):
     connectAttr(mus_length_name+".distance",mus_mult_name+".input1Y",f=1)
     connectAttr(mus_mult_name+".outputY",mus_name+".scaleY",f=1)
     setAttr(mus_mult_name+".input2Y",0.5)
+    
+### make projection point for visualization
+def makeProjectionBall(sel, muscleName):
+    proj_point = "proj_"+muscleName
+    polySphere(r=.1, sx=8, sy=8, n=proj_point)
+    assignMuscleColor(proj_point)
+
+### calculate orthogonal distance between joint center and muscle vector
+def calcMomentArm(sel, muscleName):
+    A, B, C = sel[0], sel[1], sel[2]
+    vectBA = makeVector(B,A)
+    vectBC = makeVector(B,C)
+    unitBC = vectBC/vectBC.length()
+    distT = vectBA * unitBC #get distance T of point B to projection P of point A on vector BC
+    projectionP = B.translate.get() + distT * unitBC #get projection P as sum of position B and distance T along vector BC
+    vectAP = projectionP-A.translate.get()
+    distanceResult = vectAP.length()
+    dict = {'vectAP': vectAP, 'distanceResult': distanceResult, 'distT':distT, 'projectionP':projectionP}
+    return(dict)
+
+### go through and key each frame of animation, inspiration from David Baier's outputRelMotion shelf tool
+#def keyframeHelper(sel):
+    #transformList = ls(tr=1)
+    #frame=findKeyframe(transformList, hi="both",which="first")
+   # lastframe=findKeyframe(transformList, hi="both",which="last")
+    #assert(frame-lastframe != 0), "No animation found!"
+   # previousframe = lastframe+1
+   # progressWindow(title="Grabbing moment arms...", min=frame, max=lastframe, progress=frame, status = "Crunching frame: "+str(frame), isInterruptable=True)
+     #   while frame<=lastframe:
+    
+
+### transform vector to local coordinate system
+    
+### LAST: once projection point and measure tools are made, constrain so they follow the shit around
+    #spaceLocator000, then translate
 
 muscleName = getMuscleName()
 testsel = getSelectionSet()
 makeMuscleCyl(testsel,muscleName)
-    
+calcMomentArm(testsel,muscleName)
 
+distanceDimension(sp=testsel[0].translate.get(),ep=result['projectionP'])
+makeProjectionBall(testsel, muscleName)
+    
     
