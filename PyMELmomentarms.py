@@ -9,11 +9,24 @@ def getMuscleName():
     winHeight=160
     winWidth=320
     mainWindow = window('muscleWindow', title='Create Muscle', menuBar=1,
-                        maximizeButton=0, minimizeButton=1, sizeable=1,resizeToFitChildren=0)
-    frameLayout(label='Muscle Name Input',height=winHeight,width=winWidth, mw=5, mh=5)
+                        maximizeButton=0, minimizeButton=0, s=1, rtf=1)
+    frameLayout(label='Muscle Name Input',height=160,width=220, mw=5, mh=5)
+    columnLayout()
+    columnLayout()
+    text(label=" ")
+    text(label="Select (in order):")
+    text(label=" 1) Joint Coordinate System (JCS)")
+    text(label=" 2) Muscle Marker 1 (proximal or distal)")
+    text(label=" 3) Muscle Marker 2 (proximal or distal)")
+    text(label=" ")
+    text(label="Muscle Name")
+    textField('muscleNameField', text="muscleName", width=winWidth-20)
+    button(command=doTheThing, label="Create Muscle", w=winWidth-20)
     showWindow(mainWindow)
+    return(muscleNameField)
 
-
+def doTheThing():
+    textField(getMuscleName(), q=1,text=1)
 
 
 #def getMuscleName():
@@ -43,6 +56,7 @@ def assignMuscleColor(target):
             muscleMaterial = "muscleMat"
             muscleMaterialSG = "muscleMatSG"
         sets(muscleMaterialSG, edit=True, forceElement=target)
+           
             
 ### get currently selected objects in order: 
 ### 1. joint center, 2. muscle marker #1, 3. muscle marker #2
@@ -51,18 +65,14 @@ def getSelectionSet():
     assert(0<len(sel)<=3),"Please select (in order): 1. joint center, 2. muscle marker 1, 3. muscle marker 2"
     return sel
 
+
 ### make muscle vector with selected locators
 def makeVector(A,B):   
     posA = dt.Vector(xform(A,q=1,translation=1,worldSpace=1))
     posB = dt.Vector(xform(B,q=1,translation=1,worldSpace=1))   
-    #posA = A.translate.get() OLD: broken by parent constraints
-    #posB = B.translate.get() OLD: broken by parent constraints
     vectAB = posB - posA  
-    # make measure tool to visualize muscle
-    ## distanceDimension(sp=posA,ep=posB)
-    # check to see if the vector was correctly calculated
-    ## distanceDimension(sp=posB,ep=(VectAB[0]+posB[0],VectAB[1]+posB[1],VectAB[2]+posB[2]))
     return vectAB
+
 
 ### make muscle cylinder for visualization
 def makeMuscleCyl(sel,muscleName):
@@ -98,19 +108,21 @@ def calcMAVector(sel):
     dict = {'vectAP': vectAP, 'distanceResult': distanceResult, 'distT':distT, 'projectionP':projectionP, 'interMarkerDistance':interMarkerDistance}
     return(dict)
     
+    
 ### make moment arm locator object
 def makeMAobj(sel, muscleName):
     #if MA locator doesn't exist, make one and parent under JCS to get object/local space translations
     MA_muscle = spaceLocator(n="MA_"+muscleName)
-    addAttr(MA_muscle, shortName='lMA', longName='MomentArmLength', defaultValue=0.0)
-    addAttr(MA_muscle, shortName='iMD', longName='IntermarkerDistance', defaultValue=0.0)
-    addAttr(MA_muscle, shortName='xMA', longName='xMomentArm', defaultValue=0.0)
-    addAttr(MA_muscle, shortName='yMA', longName='yMomentArm', defaultValue=0.0)
-    addAttr(MA_muscle, shortName='zMA', longName='zMomentArm', defaultValue=0.0)
+    addAttr(MA_muscle, shortName='lMA', longName='MomentArmLength', defaultValue=0.0, keyable=1)
+    addAttr(MA_muscle, shortName='iMD', longName='IntermarkerDistance', defaultValue=0.0, keyable=1)
+    addAttr(MA_muscle, shortName='xMA', longName='xMomentArm', defaultValue=0.0, keyable=1)
+    addAttr(MA_muscle, shortName='yMA', longName='yMomentArm', defaultValue=0.0, keyable=1)
+    addAttr(MA_muscle, shortName='zMA', longName='zMomentArm', defaultValue=0.0, keyable=1)
     matchTransform(MA_muscle,sel[0],rot=1, pos=1)
     parent(MA_muscle, sel[0])
     print("made "+muscleName+"'s moment arm locator!")
     return(MA_muscle)
+    
     
 ### get and store moment arm vector in local joint space
 def keyMA(sel,muscleName,MA_muscle):
@@ -141,6 +153,7 @@ def keyMA(sel,muscleName,MA_muscle):
     #check:sqrt(xMA**2+MA_x**2) = result['distanceResult']
     return(MA_muscle)
 
+
 ### step through frames, inspiration from David Baier's outputRelMotion shelf tool
 def keyFrameHelper(sel,muscleName):
     if objExists("MA_"+muscleName):
@@ -167,6 +180,7 @@ def keyFrameHelper(sel,muscleName):
         currentTime(frame, update=1, edit=1)       
     progressWindow(endProgress=1)
 
+
 ### make measure tool to double check moment arm length calculation
 def measureToolMA(locA, locB, muscleName, measureType):
     sceneBefore = ls(l=1, transforms=1)
@@ -174,10 +188,14 @@ def measureToolMA(locA, locB, muscleName, measureType):
     newMeasure = rename(newMeasure,'msr_'+muscleName+measureType)
     return(newMeasure)
 
+
+### all together now
+doTheThing():
 muscleName = getMuscleName()
 sel = getSelectionSet()
 makeMuscleCyl(sel,muscleName)
 keyFrameHelper(sel,muscleName)
+    return(muscleName, sel)
 
 
     
