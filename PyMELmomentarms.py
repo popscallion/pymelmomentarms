@@ -1,18 +1,13 @@
 ### calculate muscle moment arms w/r/t a defined joint center
-### JOINT CENTER MUST BE POINT+AIM CONSTRAINED, PARENTING IS DEATH. OR FREEZE TRANSFORMATIONS
 from pymel.all import *
 import pymel.core.datatypes as dt
 
 def getMuscleName():
     if window('muscleWindow',exists=1) == True:
         deleteUI('muscleWindow')
-    winHeight=160
-    winWidth=320
-    mainWindow = window('muscleWindow', title='Create Muscle', menuBar=1,
-                        maximizeButton=0, minimizeButton=0, s=1, rtf=1)
-    frameLayout(label='Muscle Name Input',height=160,width=220, mw=5, mh=5)
-    columnLayout()
-    columnLayout()
+    mainWindow = window('muscleWindow', title='Create Muscle',rtf=1, w=300, h=200)
+    frameLayout(label='Muscle Name Input')
+    columnLayout(columnOffset=('both',20))
     text(label=" ")
     text(label="Select (in order):")
     text(label=" 1) Joint Coordinate System (JCS)")
@@ -20,26 +15,12 @@ def getMuscleName():
     text(label=" 3) Muscle Marker 2 (proximal or distal)")
     text(label=" ")
     text(label="Muscle Name")
-    textField('muscleNameField', text="muscleName", width=winWidth-20)
-    button(command=doTheThing, label="Create Muscle", w=winWidth-20)
+    textField('muscleNameField', text="muscleName")
+    button(label="Create Muscle",command=doTheThing)
     showWindow(mainWindow)
-    return(muscleNameField)
 
-def doTheThing():
-    textField(getMuscleName(), q=1,text=1)
+getMuscleName()
 
-
-#def getMuscleName():
-    #result = promptDialog(
-                    #title='Create Muscle',
-                    #message='Enter name of muscle',
-                    #button=['OK'],
-                    #defaultButton='OK',
-                    #cancelButton='Cancel',
-                    #dismissString='Cancel')
-   # assert(result == 'OK'), "Muscle needs a name!"
-   # muscname = promptDialog(query=True, text=True)
-   # return muscname
 
 ### check to see if muscle material exists. if yes, do nothing. if not, make one.   
 ### maya assigns materials(shaders) by adding meshes to a shader group, which must first be created
@@ -190,11 +171,11 @@ def measureToolMA(locA, locB, muscleName, measureType):
 
 
 ### all together now
-doTheThing():
-muscleName = getMuscleName()
-sel = getSelectionSet()
-makeMuscleCyl(sel,muscleName)
-keyFrameHelper(sel,muscleName)
+def doTheThing(muscleName):
+    muscleName = textField('muscleNameField', q=1,text=1)
+    sel = getSelectionSet()
+    makeMuscleCyl(sel,muscleName)
+    keyFrameHelper(sel,muscleName)
     return(muscleName, sel)
 
 
