@@ -96,27 +96,53 @@ def makeMAobj(sel, muscleName):
     print("made "+muscleName+"'s moment arm locator!")
     return(MA_muscle)
 
-### get and store moment arm vector in local joint space
+### decompose 3D moment arm into its projections onto X, Y, and Z planes, but returns 0 if the plane projection is parallel to a given axis
+def findProjection(MA_muscle):
+    MA_xyz = xform(MA_muscle,q=1,t=1,objectSpace=1)
+    vectMA_xyz = dt.Vector(MA_xyz)
+    vectX = dt.Vector(1,0,0)
+    vectY = dt.Vector(0,1,0)
+    vectZ = dt.Vector(0,0,1)
+    XYPlane = cross(vectX,vectY)
+    YZPlane = cross(vectY,vectZ)
+    XZPlane = cross(vectX,vectZ)
+    projX = vectMA_xyz - dot(vectMA_xyz,YZPlane)*YZPlane
+    projY = vectMA_xyz - dot(vectMA_xyz,XZPlane)*XZPlane
+    projZ = vectMA_xyz - dot(vectMA_xyz,XYPlane)*XYPlane
+    areaX = projX[1]*projX[2]
+    areaY = projY[0]*projY[2]
+    areaZ = projZ[0]*projZ[1]
+    if areaX == 0:
+        resultX = 0
+    else:
+        resultX = projX.length()
+    if areaY == 0:
+        resultY = 0
+    else:
+        resultY = projY.length()
+    if areaZ == 0:
+        resultZ = 0
+    else:
+        resultZ = projZ.length()
+    dict = {'xMA': resultX,'yMA': resultY,'zMA': resultZ}
+    return(dict)
+
+### store decomposed moment arms as custom attributes
 def keyMA(sel,muscleName,MA_muscle):
     #run calcMAVector to get projectionP
     result = calcMAVector(sel)
     xform(MA_muscle,t=result['projectionP'],ws=1)
     #get translation of MA locator
-    MA_xyz = xform(MA_muscle,q=1,t=1,objectSpace=1)
-    #calculate projection of MA into planes of action
-    xMA = sqrt(MA_xyz[1]**2+MA_xyz[2]**2)
-    yMA = sqrt(MA_xyz[0]**2+MA_xyz[2]**2)
-    zMA = sqrt(MA_xyz[0]**2+MA_xyz[1]**2)
-    dict = {'xMA':xMA,'yMA':yMA,'zMA':zMA}
+    momentArms = findProjection(MA_muscle)
     #store MA projections as attributes in MA locator, then key
-    setAttr(MA_muscle.xMA, xMA)
-    setAttr(MA_muscle.yMA, yMA)
-    setAttr(MA_muscle.zMA, zMA)
+    setAttr(MA_muscle.xMA, momentArms['xMA'])
+    setAttr(MA_muscle.yMA, momentArms['yMA'])
+    setAttr(MA_muscle.zMA, momentArms['zMA'])
     setAttr(MA_muscle.lMA, result['distanceResult'])
     setAttr(MA_muscle.iMD, result['interMarkerDistance'])
-    setKeyframe(MA_muscle, v=xMA, at='xMA')
-    setKeyframe(MA_muscle, v=yMA, at='yMA')
-    setKeyframe(MA_muscle, v=zMA, at='zMA')
+    setKeyframe(MA_muscle, v=momentArms['xMA'], at='xMA')
+    setKeyframe(MA_muscle, v=momentArms['yMA'], at='yMA')
+    setKeyframe(MA_muscle, v=momentArms['zMA'], at='zMA')
     setKeyframe(MA_muscle, v=result['distanceResult'], at='lMA')
     setKeyframe(MA_muscle, v=result['interMarkerDistance'], at='iMD')
     setKeyframe(MA_muscle, at='translateX')
