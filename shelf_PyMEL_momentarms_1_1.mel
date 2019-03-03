@@ -1,4 +1,4 @@
-global proc shelf_PyMEL_momentarms_1_0 () {
+global proc shelf_PyMEL_momentarms_1_1 () {
     global string $gBuffStr;
     global string $gBuffStr0;
     global string $gBuffStr1;
@@ -31,7 +31,7 @@ global proc shelf_PyMEL_momentarms_1_0 () {
         -style "iconOnly"
         -marginWidth 1
         -marginHeight 1
-        -command "import pymel3DMA\npymel3DMA.getMuscleName()"
+        -command "import pymel3DMA\npymel3DMA.getMuscleNameUI()"
         -sourceType "python"
         -commandRepeatable 1
         -flat 1
