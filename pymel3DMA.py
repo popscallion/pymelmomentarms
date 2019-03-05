@@ -7,13 +7,18 @@ def doTheThing(muscle_name):
     #0: getting input
     muscle_name = textField('muscle_name_field', q=1,text=1)
     init_frame = textField('frame_number_field', q=1,text=1)
+    include_unscaled = checkBox('check_unscaled_moment_arms', q=1, v=1)
     #1: setting up
     currentTime(init_frame)
-    sel = getSelectionSet()   
+    sel = getSelectionSet()
     muscle_vec = makeArrow(sel['C'], sel['B'], 'mus_'+muscle_name, 'yellow')
     addAttr(muscle_vec, shortName='Xma', longName='xMomentArm', defaultValue=0.0, keyable=1)
     addAttr(muscle_vec, shortName='Yma', longName='yMomentArm', defaultValue=0.0, keyable=1)
     addAttr(muscle_vec, shortName='Zma', longName='zMomentArm', defaultValue=0.0, keyable=1)
+    if include_unscaled == 1:
+        addAttr(muscle_vec, shortName='uXma', longName='xMomentArmUnscaled', defaultValue=0.0, keyable=1)
+        addAttr(muscle_vec, shortName='uYma', longName='yMomentArmUnscaled', defaultValue=0.0, keyable=1)
+        addAttr(muscle_vec, shortName='uZma', longName='zMomentArmUnscaled', defaultValue=0.0, keyable=1)
     proxy = makeJointProxy(sel['A'], muscle_name)
     momentarm_vecs = armDecomposer(sel, proxy)
     momentarm_objs = initializeMAArrows(muscle_name, momentarm_vecs, proxy)
@@ -30,17 +35,20 @@ def getMuscleNameUI():
     columnLayout(columnOffset=('both',20))
     text(label=' ')
     text(label='Select (in order):')
-    text(label=' 1) Joint Coordinate System (JCS)')
+    text(label=' 1) Distal Joint Coordinate System (JCS)')
     text(label=' 2) Muscle Marker 1 (proximal)')
     text(label=' 3) Muscle Marker 2 (distal)')
     text(label='')
     text(label='Muscle Name')
-    textField('muscle_name_field', text='Muscle Name')
+    textField('muscle_name_field', text='MuscleName')
     text(label='')
     text(label='Pick any frame with real data to initialize:')
     textField('frame_number_field', text='Frame')
     text(label='')
+    checkBox('check_unscaled_moment_arms', label='Include unscaled moment arms' )
+    text(label='')
     button(label='Create Muscle',command=doTheThing)
+    text(label='')
     showWindow(mainWindow)
 
 
@@ -52,7 +60,7 @@ def getSelectionSet():
     dict = {}
     dict['A'], dict['B'], dict['C'] = sel[0], sel[1], sel[2]
     return dict
-    
+
 
 ### make a vector from two locators
 def makeVector(locA,locB):
@@ -64,12 +72,12 @@ def makeVector(locA,locB):
 
 ### make vector arrow for visualization
 def makeArrow(sp, ep, obj_name, tint='yellow', alpha=0.75):
-    ## sp: start point as dt.Vector, 
+    ## sp: start point as dt.Vector,
     ## ep: end point as dt.Vector,
     ## name: name of vector object,
-    ## mode: mode to run in ('vec' for vector or 'mus' for muscle)  
-    # set up variables   
-    size = makeVector(sp,ep).length()   
+    ## mode: mode to run in ('vec' for vector or 'mus' for muscle)
+    # set up variables
+    size = makeVector(sp,ep).length()
     obj_length_name = "length_"+obj_name
     obj_scale_name = "sf_"+obj_name
     obj_mult_name = "multiply_"+obj_name
@@ -105,8 +113,8 @@ def makeArrow(sp, ep, obj_name, tint='yellow', alpha=0.75):
     #addAttr(arrow[0], shortName='lv', longName='VectorLength', defaultValue=0.0, keyable=1)
     #connectAttr(obj_length_name+".distance", arrow[0].lv, f=1)
     return arrow
-    
-    
+
+
 ### check to see if muscle material exists. if yes, do nothing. if not, make one.
 def assignColor(target, tint, alpha):
     if objExists(target):
@@ -148,9 +156,9 @@ def makeJointProxy(target, name):
     pointConstraint(target, joint_proxy)
     orientConstraint(target, joint_proxy)
     hide(listRelatives(joint_proxy)[-5:])
-    proxy = {   'joint':joint_proxy, 
-                'x':x_proxy, 
-                'y':y_proxy, 
+    proxy = {   'joint':joint_proxy,
+                'x':x_proxy,
+                'y':y_proxy,
                 'z':z_proxy}
     return proxy
 
@@ -158,7 +166,7 @@ def makeJointProxy(target, name):
 ### initialize XYZ moment arm arrows
 def initializeMAArrows(muscle_name, momentarm_vecs, proxy):
     result = {}
-    for case in ['x','y','z']:       
+    for case in ['x','y','z']:
         if case == 'x':
             tint = 'red'
         elif case == 'y':
@@ -176,11 +184,11 @@ def initializeMAArrows(muscle_name, momentarm_vecs, proxy):
         matchTransform(lc, proxy['joint'], pos=1, rot=1)
         parent(lc, proxy['joint'])
         xform(lc, t=momentarm_vecs[which_plane]['ma_unscaled'], r=1, ws=1)
-        ma_arrow = makeArrow(proxy['joint'], lc, arrow_name+'_'+muscle_name, tint, 0.75) 
+        ma_arrow = makeArrow(proxy['joint'], lc, arrow_name+'_'+muscle_name, tint, 0.75)
         result[locator_name]=lc
         result[arrow_name]=ma_arrow
         hide(listRelatives(lc)[-2:])
-        setKeyframe(lc)    
+        setKeyframe(lc)
     return result
 
 
@@ -196,7 +204,7 @@ def frameUpdate(sel, proxy, muscle_vec, momentarm_objs, momentarm_vecs_old):
     xform(loc['x'], t=xtrans, r=1, ws=1)
     xform(loc['y'], t=ytrans, r=1, ws=1)
     xform(loc['z'], t=ztrans, r=1, ws=1)
-    setKeyframe(loc['x'],loc['y'],loc['z']) 
+    setKeyframe(loc['x'],loc['y'],loc['z'])
     # key moment arm attributes of muscle object
     setAttr(muscle_vec.Xma, momentarm_vecs_new['xPlane']['ma_actual'])
     setAttr(muscle_vec.Yma, momentarm_vecs_new['yPlane']['ma_actual'])
@@ -204,6 +212,13 @@ def frameUpdate(sel, proxy, muscle_vec, momentarm_objs, momentarm_vecs_old):
     setKeyframe(muscle_vec.Xma, v=momentarm_vecs_new['xPlane']['ma_actual'], at='Xma')
     setKeyframe(muscle_vec.Yma, v=momentarm_vecs_new['yPlane']['ma_actual'], at='Yma')
     setKeyframe(muscle_vec.Zma, v=momentarm_vecs_new['zPlane']['ma_actual'], at='Zma')
+    if attributeQuery('uXma', node=muscle_vec, exists=1) == 1:
+        setAttr(muscle_vec.uXma, momentarm_vecs_new['xPlane']['ma_unscaled_val'])
+        setAttr(muscle_vec.uYma, momentarm_vecs_new['yPlane']['ma_unscaled_val'])
+        setAttr(muscle_vec.uZma, momentarm_vecs_new['zPlane']['ma_unscaled_val'])
+        setKeyframe(muscle_vec.uXma, v=momentarm_vecs_new['xPlane']['ma_unscaled_val'], at='uXma')
+        setKeyframe(muscle_vec.uYma, v=momentarm_vecs_new['yPlane']['ma_unscaled_val'], at='uYma')
+        setKeyframe(muscle_vec.uZma, v=momentarm_vecs_new['zPlane']['ma_unscaled_val'], at='uZma')
     return momentarm_vecs_new
 
 
@@ -230,7 +245,7 @@ def keyFrameHelper(sel, proxy, muscle_vec, momentarm_objs):
         currentTime(frame, update=1, edit=1)
     progressWindow(endProgress=1)
 
-    
+
 ### recalculate world space vectors for joint proxy
 def updateCoordinateSystem(proxy):
     xUnit = makeVector(proxy['joint'],proxy['x'])
@@ -244,10 +259,10 @@ def updateCoordinateSystem(proxy):
 def projectionHero(mode, target, cs):
     xUnit = cs['xUnit']
     yUnit = cs['yUnit']
-    zUnit = cs['zUnit']        
+    zUnit = cs['zUnit']
     xAxisP = dot(target,xUnit)
     yAxisP = dot(target,yUnit)
-    zAxisP = dot(target,zUnit)    
+    zAxisP = dot(target,zUnit)
     xPlaneP = target-(xAxisP*xUnit)
     yPlaneP = target-(yAxisP*yUnit)
     zPlaneP = target-(zAxisP*zUnit)
@@ -261,8 +276,8 @@ def projectionHero(mode, target, cs):
               'yAxis':yAxisP,
               'zAxis':zAxisP}
     return result[mode]
-    
-    
+
+
 ### cross vectors to find area of parallelogram as magnitude of orthogonal vector
 def armDecomposer(sel, proxy):
     cs = updateCoordinateSystem(proxy)
@@ -284,7 +299,7 @@ def armDecomposer(sel, proxy):
         dist_T_proj = dot(joint_muscle_BA_proj, u_muscle_CB_proj)
         pos_P_xyz = dt.Vector(xform(sel['B'], q=1, t=1, ws=1)+(dist_T_proj*u_muscle_CB_proj))
         ma_unprojected = dt.Vector(xform(proxy['joint'], q=1, t=1, ws=1))-pos_P_xyz
-        ma_unscaled = (-1*projectionHero(case, ma_unprojected, cs)) 
+        ma_unscaled = (-1*projectionHero(case, ma_unprojected, cs))
         #print('unscaled MA for '+str(case)+' is '+str(ma_unscaled.length()))
         #<LEGACY PARALLELOGRAM METHOD, RETURNS SCALAR>
         #joint_muscle_BA_proj_para = projectionHero(case, joint_muscle_BA, cs)
@@ -300,6 +315,7 @@ def armDecomposer(sel, proxy):
         ma_actual = ma_scaled.length()*ma_sign
         #print('actual MA for '+str(case)+' is '+str(ma_actual))
         result[case]['ma_unscaled'] = ma_unscaled
+        result[case]['ma_unscaled_val'] = ma_unscaled.length()*ma_sign
         result[case]['ma_scaled'] = ma_scaled
         result[case]['scale_factor'] = scale_factor
         result[case]['ma_actual'] = ma_actual

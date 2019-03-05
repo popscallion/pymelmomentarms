@@ -30,7 +30,7 @@ def getIndices(range_string: str):
     selection_index = [x-1 for x in selection]
     return selection_index
 
-def importData(csv: str, rows: str, cols: str):
+def importData(csv: str, rows: str, cols: str, convert_cm_mm=0):
     ## takes a csv with column headers but no frame column (XROMM tools default)
     ## pass frame ranges and column ranges as strings in 'first-last' syntax, using commas as separators
     df = pd.read_csv(csv)
@@ -50,6 +50,8 @@ def importData(csv: str, rows: str, cols: str):
         cols_selected = [-1]+getIndices(cols)
     df = df.iloc[rows_selected,cols_selected]
     df['frame'] = df['frame']-frame_offset
+    if convert_cm_mm == 1:
+        df.iloc[:,1:] = cmToMm(df.iloc[:,1:])
     return df
 
 
@@ -82,11 +84,12 @@ SIMM_48_brevis = importData('csv/SIMM48LHS_tr4.csv', '', '2,4,6')
 SIMM_48_brevis = wideToLong(SIMM_48_brevis, 'biceps', 'SIMM_brevis')
 SIMM_48_longus = importData('csv/SIMM48LHS_tr4.csv', '', '3,5,7')
 SIMM_48_longus = wideToLong(SIMM_48_longus, 'biceps', 'SIMM_longus')
-maya_48_distal = importData('csv/clean48LHSr4_jcs_ds.csv', '75-800', '')
-maya_48_distal = wideToLong(maya_48_distal, 'biceps', 'implanted')
-maya_48_distal.moment_arm = cmToMm(maya_48_distal.moment_arm)
-echidna48run4figs = [SIMM_48_brevis,SIMM_48_longus,maya_48_distal]
-plotMomentArms(echidna48run4figs, panels = (3,1), figsize = (20,10))
+maya_48_scaled = importData('csv/clean48LHSr4_biceps_includeunscaled.csv', '75-800', '1-3', convert_cm_mm=1)
+maya_48_unscaled = importData('csv/clean48LHSr4_biceps_includeunscaled.csv', '75-800', '4-6', convert_cm_mm=1)
+maya_48_scaled = wideToLong(maya_48_scaled, 'biceps', 'implanted_scaled')
+maya_48_unscaled = wideToLong(maya_48_unscaled, 'biceps', 'implanted_unscaled')
+echidna48run4figs = [SIMM_48_brevis,SIMM_48_longus,maya_48_scaled, maya_48_unscaled]
+plotMomentArms(echidna48run4figs, panels = (2,2), figsize = (20,10))
 
 
 #46r15
@@ -96,22 +99,21 @@ SIMM_46_pec2= importData('csv/SIMM46LHS_tr15.csv', '', '3,6,9')
 SIMM_46_pec2 = wideToLong(SIMM_46_pec2, 'pectoralis', 'SIMM_pec2')
 SIMM_46_pec3= importData('csv/SIMM46LHS_tr15.csv', '', '4,7,10')
 SIMM_46_pec3 = wideToLong(SIMM_46_pec3, 'pectoralis', 'SIMM_pec3')
-maya_46_cranial = importData('csv/clean46LHSr15_pecO1.csv', '3-800', '')
-maya_46_cranial = wideToLong(maya_46_cranial, 'pectoralis', 'implanted_pec_cr')
-maya_46_cranial.moment_arm = cmToMm(maya_46_cranial.moment_arm)
-maya_46_caudal = importData('csv/clean46LHSr15_pecO2.csv', '3-800', '')
-maya_46_caudal = wideToLong(maya_46_caudal, 'pectoralis', 'implanted_pec_cd')
-maya_46_caudal.moment_arm = cmToMm(maya_46_caudal.moment_arm)
-echidna46run15figs = [SIMM_46_pec1,SIMM_46_pec2,SIMM_46_pec3, maya_46_cranial, maya_46_caudal]
+maya_46_caudal_scaled = importData('csv/clean46LHSr15_peccd_includeunscaled.csv', '3-800', '1-3', convert_cm_mm=1)
+maya_46_caudal_unscaled = importData('csv/clean46LHSr15_peccd_includeunscaled.csv', '3-800', '4-6', convert_cm_mm=1)
+maya_46_caudal_scaled = wideToLong(maya_46_caudal_scaled, 'pectoralis', 'implanted_pec_cd_scaled')
+maya_46_caudal_unscaled = wideToLong(maya_46_caudal_unscaled, 'pectoralis', 'implanted_pec_cd_unscaled')
+echidna46run15figs = [SIMM_46_pec1,SIMM_46_pec2,SIMM_46_pec3, maya_46_caudal_scaled, maya_46_caudal_unscaled]
 plotMomentArms(echidna46run15figs, panels = (1,5), figsize = (26,10))
-plotMomentArms([SIMM_46_pec3,maya_46_caudal], panels = (2,1), figsize = (20,10))
+plotMomentArms([SIMM_46_pec3,maya_46_caudal_scaled], panels = (2,1), figsize = (20,10))
 
 
 #44r9
 SIMM_44_triceps= importData('csv/SIMM44LHS_tr9.csv', '', '2,3,4')
 SIMM_44_triceps = wideToLong(SIMM_44_triceps, 'triceps', 'SIMM_tri')
-maya_44_triceps = importData('csv/clean44LHSr9_triceps.csv', '36-800', '')
-maya_44_triceps = wideToLong(maya_44_triceps, 'triceps', 'implanted_tri')
-maya_44_triceps.moment_arm = cmToMm(maya_44_triceps.moment_arm)
-echidna44run9figs = [SIMM_44_triceps,maya_44_triceps]
-plotMomentArms(echidna44run9figs, panels = (2,1), figsize = (20,10))
+maya_44_triceps_scaled = importData('csv/clean44LHSr9_triceps_includeunscaled.csv', '36-800', '1-3',convert_cm_mm=1)
+maya_44_triceps_unscaled = importData('csv/clean44LHSr9_triceps_includeunscaled.csv', '36-800', '4-6',convert_cm_mm=1)
+maya_44_triceps_scaled = wideToLong(maya_44_triceps_scaled, 'triceps', 'implanted_tri_scaled')
+maya_44_triceps_unscaled = wideToLong(maya_44_triceps_unscaled, 'triceps', 'implanted_tri_unscaled')
+echidna44run9figs = [SIMM_44_triceps,maya_44_triceps_scaled,maya_44_triceps_unscaled]
+plotMomentArms(echidna44run9figs, panels = (3,1), figsize = (20,10))
