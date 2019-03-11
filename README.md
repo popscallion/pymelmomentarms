@@ -1,4 +1,4 @@
-# pymelmomentarms v1.0
+# pymelmomentarms v1.1
 Shelf tools for calculating 3D moment arms from XROMM data
 
 ##Installation
