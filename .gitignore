@@ -36,6 +36,7 @@
 ehthumbs.db
 Thumbs.db
 
-# data csvs #
+# data files #
 ######################
 csv/
+maya/

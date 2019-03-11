@@ -2,8 +2,14 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import statsmodels.api as sm
+from statsmodels.api import OLS
+from sklearn import preprocessing
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.metrics import r2_score
+from sklearn.model_selection import train_test_split
+%matplotlib inline
 sns.set(style="darkgrid")
-
 
 axes = ['X','Y','Z']
 axis_colors = ['pale red','medium green','denim blue']
@@ -117,3 +123,50 @@ maya_44_triceps_scaled = wideToLong(maya_44_triceps_scaled, 'triceps', 'implante
 maya_44_triceps_unscaled = wideToLong(maya_44_triceps_unscaled, 'triceps', 'implanted_tri_unscaled')
 echidna44run9figs = [SIMM_44_triceps,maya_44_triceps_scaled,maya_44_triceps_unscaled]
 plotMomentArms(echidna44run9figs, panels = (3,1), figsize = (20,10))
+
+
+maya_44_relJCS = importData('csv/transrot_clean44LHSr9.csv', '36-799', '')
+maya_44_relJCS_noframe = maya_44_relJCS.loc[:, maya_44_relJCS.columns != 'frame']
+corr_maya_44_relJCS = maya_44_relJCS_noframe.corr()
+maya_44_relJCS_noframe.describe()
+maya_44_relJCS_abdadd = maya_44_relJCS[(abs(maya_44_relJCS['mdata.ry'])<=5) & (abs(maya_44_relJCS['mdata.rz'])<=5)]
+maya_44_relJCS_abdadd.shape
+maya_44_relJCS_lar = maya_44_relJCS[(abs(maya_44_relJCS['mdata.rx'])<=5) & (abs(maya_44_relJCS['mdata.rz'])<=5)]
+maya_44_relJCS_lar.shape
+maya_44_relJCS_flexext = maya_44_relJCS[(abs(maya_44_relJCS['mdata.rx'])<=5) & (abs(maya_44_relJCS['mdata.ry'])<=5)]
+maya_44_relJCS_flexext.shape
+
+
+
+maya_46_relJCS = importData('csv/transrot_clean46LHSr15.csv', '3-800', '')
+maya_46_relJCS_noframe = maya_46_relJCS.loc[:, maya_46_relJCS.columns != 'frame']
+corr_maya_46_relJCS = maya_46_relJCS_noframe.corr()
+maya_46_relJCS_abdadd = maya_46_relJCS[(abs(maya_46_relJCS['mdata.ry'])<=5) & (abs(maya_46_relJCS['mdata.rz'])<=5)]
+maya_46_relJCS_abdadd.shape
+maya_46_relJCS_lar = maya_46_relJCS[(abs(maya_46_relJCS['mdata.rx'])<=5) & (abs(maya_46_relJCS['mdata.rz'])<=5)]
+maya_46_relJCS_lar.shape
+maya_46_relJCS_flexext = maya_46_relJCS[(abs(maya_46_relJCS['mdata.rx'])<=5) & (abs(maya_46_relJCS['mdata.ry'])<=5)]
+maya_46_relJCS_flexext.shape
+
+
+
+maya_48_relJCS = importData('csv/transrot_clean48LHSr4.csv', '75-800', '')
+maya_48_relJCS_noframe = maya_48_relJCS.loc[:, maya_48_relJCS.columns != 'frame']
+corr_maya_48_relJCS = maya_48_relJCS_noframe.corr()
+maya_48_relJCS_noframe.describe()
+maya_48_relJCS_abdadd = maya_48_relJCS[(abs(maya_48_relJCS['mdata.ry'])<=10) & (abs(maya_48_relJCS['mdata.rz'])<=10)]
+maya_48_relJCS_abdadd.shape
+maya_48_relJCS_lar = maya_48_relJCS[(abs(maya_48_relJCS['mdata.rx'])<=10) & (abs(maya_48_relJCS['mdata.rz'])<=10)]
+maya_48_relJCS_lar.shape
+maya_48_relJCS_flexext = maya_48_relJCS[(abs(maya_48_relJCS['mdata.rx'])<=10) & (abs(maya_48_relJCS['mdata.ry'])<=10)]
+maya_48_relJCS_flexext.shape
+
+
+
+sns.pairplot(maya_44_relJCS_noframe, diag_kind="kde")
+sns.pairplot(maya_46_relJCS_noframe,diag_kind="kde")
+sns.pairplot(maya_48_relJCS_noframe,diag_kind="kde")
+
+maya_444648_relJCS_pooled = pd.concat([maya_44_relJCS_noframe, maya_46_relJCS_noframe, maya_48_relJCS_noframe])
+sns.pairplot(maya_444648_relJCS_pooled,diag_kind="kde")
+maya_444648_relJCS_pooled.describe()
