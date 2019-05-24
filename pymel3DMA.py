@@ -1,82 +1,224 @@
 from pymel.all import *
 import pymel.core.datatypes as dt
 
-
-### all together now
+## does the thing, runs on UI button click
 def doTheThing(muscle_name):
-    #0: getting input
     muscle_name = textField('muscle_name_field', q=1,text=1)
-    init_frame = textField('frame_number_field', q=1,text=1)
-    include_unscaled = checkBox('check_unscaled_moment_arms', q=1, v=1)
-    #1: setting up
-    currentTime(init_frame)
     sel = getSelectionSet()
-    muscle_vec = makeArrow(sel['C'], sel['B'], 'mus_'+muscle_name, 'yellow')
-    addAttr(muscle_vec, shortName='Xma', longName='xMomentArm', defaultValue=0.0, keyable=1)
-    addAttr(muscle_vec, shortName='Yma', longName='yMomentArm', defaultValue=0.0, keyable=1)
-    addAttr(muscle_vec, shortName='Zma', longName='zMomentArm', defaultValue=0.0, keyable=1)
-    if include_unscaled == 1:
-        addAttr(muscle_vec, shortName='uXma', longName='xMomentArmUnscaled', defaultValue=0.0, keyable=1)
-        addAttr(muscle_vec, shortName='uYma', longName='yMomentArmUnscaled', defaultValue=0.0, keyable=1)
-        addAttr(muscle_vec, shortName='uZma', longName='zMomentArmUnscaled', defaultValue=0.0, keyable=1)
-    proxy = makeJointProxy(sel['A'], muscle_name)
-    momentarm_vecs = armDecomposer(sel, proxy)
-    momentarm_objs = initializeMAArrows(muscle_name, momentarm_vecs, proxy)
-    #2: update every frame
-    keyFrameHelper(sel, proxy, muscle_vec, momentarm_objs)
+    ## setup: make muscle arrow for visualization
+    mus_arrow = makeArrow(sel['C'], sel['B'], 'mus_'+muscle_name, 'yellow')
+    ## setup: make proxy
+    proxy = makeUnitAxes(muscle_name, sel, united=0)
+    ## evaluate every frame:
+    updateFrame(sel, proxy)
 
+## every frame: move proxy to new location, transform and key proxy axes using X, XY, and XYZ rotations from offset matrix
+def updateProxy(sel, proxy):
+    offset_mat = findOffsetMatrix(sel['A'], sel['A*'])
+    ## reset warp:
+    xform(proxy['x_a'],proxy['y_a'],proxy['z_a'], ro=[0,0,0], r=0, os=1)
+    ## X:
+    xform(proxy['x_a'],proxy['y_a'],proxy['z_a'], ro=[offset_mat['rX'],0,0], r=1, os=1)
+    # print('rotating XYZ by rX: '+str(offset_mat['rX']))
+    ## XY:
+    xform(proxy['y_a'],proxy['z_a'], ro=[0,offset_mat['rY'],0], r=1, os=1)
+    # print('rotating YZ by rY: '+str(offset_mat['rY']))
+    ## XYZ:
+    xform(proxy['z_a'], ro=[0,0,offset_mat['rZ']], r=1, os=1)
+    # print('rotating Z by rZ: '+str(offset_mat['rZ']))
+    ## key proxy transformations:
+    for axis in ['x_a','y_a','z_a']:
+        setKeyframe(proxy[axis], at='rotate')
 
-### get muscle name from user input
-def getMuscleNameUI():
-    if window('muscle_window',exists=1) == True:
-        deleteUI('muscle_window')
-    mainWindow = window('muscle_window', title='Create Muscle',rtf=1, w=300, h=250)
-    frameLayout(label='Muscle Name Input')
-    columnLayout(columnOffset=('both',20))
-    text(label=' ')
-    text(label='Select (in order):')
-    text(label=' 1) Distal Joint Coordinate System (JCS)')
-    text(label=' 2) Muscle Marker 1 (proximal)')
-    text(label=' 3) Muscle Marker 2 (distal)')
-    text(label='')
-    text(label='Muscle Name')
-    textField('muscle_name_field', text='MuscleName')
-    text(label='')
-    text(label='Pick any frame with real data to initialize:')
-    textField('frame_number_field', text='Frame')
-    text(label='')
-    checkBox('check_unscaled_moment_arms', label='Include unscaled moment arms' )
-    text(label='')
-    button(label='Create Muscle',command=doTheThing)
-    text(label='')
-    showWindow(mainWindow)
+## every frame: calculate XYZ unit vectors from transformed proxy axes
+def updateUnitVecs(proxy):
+    unit_vecs = {}
+    for axis in ['x','y','z']:
+        unit = makeVector(proxy['joint'],proxy[axis])
+        unit_vecs[axis] = unit
+    return unit_vecs
 
+## every frame: get and key moment arms
+def calculateMomentArms(sel, proxy, mus_vec, unit_vecs, frame):
+    ## calculate moment arm as shortest distance between two skew lines
+    unscaled_moment_arms = {}
+    for axis in ['x','y','z']:
+        axisdir = unit_vecs[axis]
+        axispos = xform(proxy['joint'],q=1,t=1, ws=1)
+        muscledir = mus_vec/(mus_vec.length())
+        musclepos = xform(sel['B'],q=1,t=1, ws=1)
+        cross_axismusc = cross(axisdir,muscledir)
+        difference_pos = dt.Vector([(axispos[0]-musclepos[0]),(axispos[1]-musclepos[1]),(axispos[2]-musclepos[2])])
+        numerator = dot(cross_axismusc,difference_pos)
+        denominator = cross_axismusc.length()
+        unscaled_moment_arms[axis] = numerator/denominator
+    ## dot muscle vector with each plane to get scale factor
+    muscle_projs = {}
+    for axis in ['x','y','z']:
+        axis_proj = dot(mus_vec,unit_vecs[axis])
+        plane_proj = mus_vec - (axis_proj*unit_vecs[axis])
+        scale_factor = plane_proj.length()/mus_vec.length()
+        muscle_projs[axis+'_axis'] = axis_proj
+        muscle_projs[axis+'_plane'] = plane_proj
+        muscle_projs[axis+'_scale'] = scale_factor
+    ## calculate true moment arm as product of moment arm and scale factor
+    scaled_moment_arms = {}
+    for axis in ['x','y','z']:
+        scaled = unscaled_moment_arms[axis]*muscle_projs[axis+'_scale']
+        scaled_moment_arms[axis] = scaled
+    ## key Xma_scaled Yma_scaled Zma_scaled
+    for axis in ['x','y','z']:
+        setAttr(proxy['joint']+'.'+axis.upper()+'ma', scaled_moment_arms[axis])
+        setKeyframe(proxy['joint'], at=axis.upper()+'ma')
+    print('X moment arm for frame '+str(int(frame))+' is: '+str(scaled_moment_arms['x']))
+    print('Y moment arm for frame '+str(int(frame))+' is: '+str(scaled_moment_arms['y']))
+    print('Z moment arm for frame '+str(int(frame))+' is: '+str(scaled_moment_arms['z']))
+    return scaled_moment_arms
 
-### return currently selected objects as dictionary
-    ## order: 1. neural joint center, 2. proximal muscle marker, 3. distal muscle marker
+## frame updater, inspiration from David Baier's outputRelMotion shelf tool
+def updateFrame(sel, proxy):
+    transformList = ls(tr=1)
+    frame=findKeyframe(transformList, hi="both",which="first")
+    lastframe=findKeyframe(transformList, hi="both",which="last")
+    assert(frame-lastframe != 0), "No animation found!"
+    previousframe = lastframe+1
+    currentTime(frame, update=1, edit=1)
+    progressWindow(title="Grabbing moment arms...", min=frame, max=lastframe, progress=frame, status = "Crunching frame: "+str(frame), isInterruptable=True)
+    while frame<=lastframe:
+        frame=findKeyframe(transformList, hi="both",which="next")
+        if progressWindow(q=1, isCancelled=1):
+            break
+        if (frame-previousframe) == 0:
+            break
+        previousframe = frame
+        mus_vec = makeVector(sel['C'],sel['B'])
+        updateProxy(sel, proxy)
+        unit_vecs = updateUnitVecs(proxy)
+        calculateMomentArms(sel, proxy, mus_vec, unit_vecs, frame)
+        progressWindow(edit=1, progress=frame, status=('Processing frame: '+str(frame)))
+        currentTime(frame, update=1, edit=1)
+    progressWindow(endProgress=1)
+
+## calculates a worldspace offset matrix to capture transformations between distal and proximal joint coordinate systems
+def findOffsetMatrix(obj1, obj2):
+    obj2_mat = obj2.attr('worldMatrix').get()
+    obj1_imat = obj1.attr('worldMatrix').get().inverse()
+    offset_o1o2 = dt.Matrix(obj2_mat*obj1_imat)
+    offset_o1o2_Euler = degrees(dt.EulerRotation.decompose(offset_o1o2,'ZYX'))
+    output = {  'mat':offset_o1o2,
+                'rX':dt.round(offset_o1o2_Euler[0],8),
+                'rY':dt.round(offset_o1o2_Euler[1],8),
+                'rZ':dt.round(offset_o1o2_Euler[2],8),
+                'tX':offset_o1o2[3][0],
+                'tY':offset_o1o2[3][1],
+                'tZ':offset_o1o2[3][2]}
+    # print('new offset found, rX='+str(output['rX']))
+    return output
+
+## makes unit vector proxy for composite joint coordinate system
+def makeUnitAxes(name, sel, united=0):
+    def axesShaderMake():
+        if not objExists('xShader'):
+            shadingNode('blinn', asShader=True, name='xShader')
+            sets(renderable=True, noSurfaceShader=True, empty=True, name='xShaderSG')
+            connectAttr('xShader.outColor', 'xShaderSG.surfaceShader', force=True)
+            setAttr('xShader.color', 1,0,0, type='double3')
+        if not objExists('yShader'):
+            shadingNode('blinn', asShader=True, name='yShader')
+            sets(renderable=True, noSurfaceShader=True, empty=True, name='yShaderSG')
+            connectAttr('yShader.outColor', 'yShaderSG.surfaceShader', force=True)
+            setAttr('yShader.color', 0,1,0, type='double3')
+        if not objExists('zShader'):
+            shadingNode('blinn', asShader=True, name='zShader')
+            sets(renderable=True, noSurfaceShader=True, empty=True, name='zShaderSG')
+            connectAttr('zShader.outColor', 'zShaderSG.surfaceShader', force=True)
+            setAttr('zShader.color', 0,0,1, type='double3')
+    axesShaderMake()
+    size=1
+    cyl_length = size*0.8
+    cone_length = size*0.2
+    cyl_radius = size*0.03
+    cone_radius = size*0.06
+    originLoc = spaceLocator(n=name+'_origin')
+    xLoc = spaceLocator(n=name+'_x')
+    xform(xLoc, t=[1,0,0])
+    yLoc = spaceLocator(n=name+'_y')
+    xform(yLoc, t=[0,1,0])
+    zLoc = spaceLocator(n=name+'_z')
+    xform(zLoc, t=[0,0,1])
+    xCyl = polyCylinder(r=cyl_radius,h=cyl_length, ax=[1,0,0], n=name+'_x_cyl')
+    sets('xShaderSG', e=1, forceElement=xCyl[0])
+    xform(xCyl[0], piv=[(-1*(cyl_length/2)),0,0], t=[(cyl_length/2),0,0])
+    xCone = polyCone(r=cone_radius,h=cone_length, ax=[1,0,0], n=name+'_x_cone')
+    sets('xShaderSG', e=1, forceElement=xCone[0])
+    xform(xCone[0], piv=[(-1*(cone_length/2)),0,0], t=[(cone_length/2+cyl_length),0,0])
+    yCyl = polyCylinder(r=cyl_radius,h=cyl_length, ax=[0,1,0], n=name+'_y_cyl')
+    sets('yShaderSG', e=1, forceElement=yCyl[0])
+    xform(yCyl[0], piv=[0,(-1*(cyl_length/2)),0], t=[0,(cyl_length/2),0])
+    yCone = polyCone(r=cone_radius,h=cone_length, ax=[0,1,0], n=name+'_y_cone')
+    sets('yShaderSG', e=1, forceElement=yCone[0])
+    xform(yCone[0], piv=[0,(-1*(cone_length/2)),0], t=[0,(cone_length/2+cyl_length),0])
+    zCyl = polyCylinder(r=cyl_radius,h=cyl_length, ax=[0,0,1], n=name+'_z_cyl')
+    sets('zShaderSG', e=1, forceElement=zCyl[0])
+    xform(zCyl[0], piv=[0,0,(-1*(cyl_length/2))], t=[0,0,(cyl_length/2)])
+    zCone = polyCone(r=cone_radius,h=cone_length, ax=[0,0,1], n=name+'_z_cone')
+    sets('zShaderSG', e=1, forceElement=zCone[0])
+    xform(zCone[0], piv=[0,0,(-1*(cone_length/2))], t=[0,0,(cone_length/2+cyl_length)])
+    if united==1:
+        unitedaxes = polyUnite(xCyl,yCyl,zCyl,xCone,yCone,zCone, n=name+'_arrows', constructionHistory=0)
+        output = group(empty=1, name=name+'_jnt')
+        parent(unitedaxes[0],originLoc,xLoc,yLoc,zLoc,output)
+        proxy = {   'joint':output,
+                    'o':originLoc,
+                    'x':xLoc,
+                    'y':yLoc,
+                    'z':zLoc}
+    else:
+        x_arrow = polyUnite(xCyl,xCone, n=name+'_x_a', constructionHistory=0)
+        y_arrow = polyUnite(yCyl,yCone, n=name+'_y_a', constructionHistory=0)
+        z_arrow = polyUnite(zCyl,zCone, n=name+'_z_a', constructionHistory=0)
+        output = group(empty=1, name=name+'_jnt')
+        parent(xLoc,x_arrow[0])
+        parent(yLoc,y_arrow[0])
+        parent(zLoc,z_arrow[0])
+        parent(x_arrow,y_arrow,z_arrow,originLoc,output)
+        proxy = {   'joint':output,
+                    'o':originLoc,
+                    'x':xLoc,
+                    'y':yLoc,
+                    'z':zLoc,
+                    'x_a':x_arrow,
+                    'y_a':y_arrow,
+                    'z_a':z_arrow}
+    addAttr(proxy['joint'], shortName='Xma', longName='XaxisMomentArm', at="float" , keyable=1)
+    addAttr(proxy['joint'], shortName='Yma', longName='YaxisMomentArm', at="float" , keyable=1)
+    addAttr(proxy['joint'], shortName='Zma', longName='ZaxisMomentArm', at="float" , keyable=1)
+    pointConstraint(sel['A*'], proxy['joint'])
+    orientConstraint(sel['A'], proxy['joint'])
+    return proxy
+
+## return currently selected objects as dictionary
+    ## order: 1. proximal joint center, 2. distal joint center, 3. proximal muscle marker, 4. distal muscle marker
 def getSelectionSet():
     sel = ls(sl=1)
-    assert(0<len(sel)<=3),"Please select (in order): 1. neutral joint center, 2. proximal muscle marker, 3. distal muscle marker"
+    assert(len(sel)==4),"Please select (in order): 1. proximal joint center, 2. distal joint center, 3. proximal muscle marker, 4. distal muscle marker"
     dict = {}
-    dict['A'], dict['B'], dict['C'] = sel[0], sel[1], sel[2]
+    dict['A'], dict['A*'], dict['B'], dict['C'] = sel[0], sel[1], sel[2], sel[3]
     return dict
 
-
-### make a vector from two locators
+## make a vector from two locators
 def makeVector(locA,locB):
     posA = dt.Vector(xform(locA,q=1,t=1,ws=1))
     posB = dt.Vector(xform(locB,q=1,t=1,ws=1))
     vectAB = posB - posA
     return vectAB
 
-
-### make vector arrow for visualization
+## make vector arrow for visualization
 def makeArrow(sp, ep, obj_name, tint='yellow', alpha=0.75):
     ## sp: start point as dt.Vector,
     ## ep: end point as dt.Vector,
-    ## name: name of vector object,
-    ## mode: mode to run in ('vec' for vector or 'mus' for muscle)
-    # set up variables
+    ## obj_name: name of vector object,
+    ## set up variables
     size = makeVector(sp,ep).length()
     obj_length_name = "length_"+obj_name
     obj_scale_name = "sf_"+obj_name
@@ -85,19 +227,19 @@ def makeArrow(sp, ep, obj_name, tint='yellow', alpha=0.75):
     cone_height = size*0.2
     cyl_radius = size*0.02
     cone_radius = size*0.04
-    # make primitives and combine into arrow
+    ## make primitives and combine into arrow
     cyl_primitive = polyCylinder(r=cyl_radius,h=cyl_height, ax=[1,0,0], n='cyl_'+obj_name)
     cone_primitive = polyCone(r=cone_radius,h=cone_height, ax=[1,0,0], n='cone_'+obj_name)
     xform(cone_primitive, piv=[cone_height/2,0,0], t=[(cyl_height+cone_height)/2,0,0] )
     arrow = polyUnite(cyl_primitive, cone_primitive, n=obj_name, ch=0)
     assignColor(arrow, tint, alpha)
     xform(arrow, piv=[(cyl_height*-1)/2,0,0])
-    # constrain arrow to follow ep
+    ## constrain arrow to follow ep
     pointConstraint(sp,arrow)
     aimConstraint(ep,arrow,aimVector=[1,0,0],worldUpType="vector")
     hide(listRelatives(arrow)[-2:])
-    # scale arrow by distance between sp and ep,
-    # parentMatrix distanceBetween node always gets worldspace distances, regardless of parenting
+    ## scale arrow by distance between sp and ep,
+    ## parentMatrix distanceBetween node always gets worldspace distances, regardless of parenting
     createNode("distanceBetween", n=obj_length_name)
     connectAttr(sp+".parentMatrix", obj_length_name+'.inMatrix1',f=1)
     connectAttr(ep+".parentMatrix", obj_length_name+'.inMatrix2',f=1)
@@ -109,13 +251,10 @@ def makeArrow(sp, ep, obj_name, tint='yellow', alpha=0.75):
     connectAttr(obj_length_name+".distance", obj_scale_name+".input1X", f=1)
     setAttr(obj_scale_name+".input2X",size)
     connectAttr(obj_scale_name+".outputX",arrow[0]+".scaleX",f=1)
-    # store vector magnitude as "Vector Length" attribute
-    #addAttr(arrow[0], shortName='lv', longName='VectorLength', defaultValue=0.0, keyable=1)
-    #connectAttr(obj_length_name+".distance", arrow[0].lv, f=1)
+    ## store vector magnitude as "Vector Length" attribute
     return arrow
 
-
-### check to see if muscle material exists. if yes, do nothing. if not, make one.
+## check to see if muscle material exists. if yes, do nothing. if no, make one.
 def assignColor(target, tint, alpha):
     if objExists(target):
         mat_name = tint+'_mat'
@@ -143,180 +282,26 @@ def assignColor(target, tint, alpha):
         sets(material_SG, edit=True, forceElement=target)
 
 
-### make proxy coordinate system with unit axis locators
-def makeJointProxy(target, name):
-    joint_proxy = spaceLocator(n="jnt_"+name)
-    x_proxy = spaceLocator(n="x_"+name)
-    y_proxy = spaceLocator(n="y_"+name)
-    z_proxy = spaceLocator(n="z_"+name)
-    xform(x_proxy, t=[1,0,0])
-    xform(y_proxy, t=[0,1,0])
-    xform(z_proxy, t=[0,0,1])
-    parent(x_proxy,y_proxy,z_proxy,joint_proxy)
-    pointConstraint(target, joint_proxy)
-    orientConstraint(target, joint_proxy)
-    hide(listRelatives(joint_proxy)[-5:])
-    proxy = {   'joint':joint_proxy,
-                'x':x_proxy,
-                'y':y_proxy,
-                'z':z_proxy}
-    return proxy
 
-
-### initialize XYZ moment arm arrows
-def initializeMAArrows(muscle_name, momentarm_vecs, proxy):
-    result = {}
-    for case in ['x','y','z']:
-        if case == 'x':
-            tint = 'red'
-        elif case == 'y':
-            tint = 'green'
-        elif case == 'z':
-            tint = 'blue'
-        locator_name = 'lc_'+ case
-        arrow_name = 'ma_'+ case
-        which_plane = case + 'Plane'
-        #lc = spaceLocator(n = locator_name + '_' + muscle_name)
-        #pointConstraint(proxy['joint'], lc)
-        #orientConstraint(proxy['joint'], lc)
-        #xform(lc, t=momentarm_vecs[which_plane]['ma_scaled'], r=1, ws=1)
-        lc = spaceLocator(n = locator_name + '_' + muscle_name)
-        matchTransform(lc, proxy['joint'], pos=1, rot=1)
-        parent(lc, proxy['joint'])
-        xform(lc, t=momentarm_vecs[which_plane]['ma_unscaled'], r=1, ws=1)
-        ma_arrow = makeArrow(proxy['joint'], lc, arrow_name+'_'+muscle_name, tint, 0.75)
-        result[locator_name]=lc
-        result[arrow_name]=ma_arrow
-        hide(listRelatives(lc)[-2:])
-        setKeyframe(lc)
-    return result
-
-
-### update moment arms and store values as custom attributes
-def frameUpdate(sel, proxy, muscle_vec, momentarm_objs, momentarm_vecs_old):
-    loc = {}
-    loc['x'], loc['y'], loc['z'] = momentarm_objs['lc_x'], momentarm_objs['lc_y'], momentarm_objs['lc_z']
-    # shift moment arm locators to match new frame
-    momentarm_vecs_new = armDecomposer(sel, proxy)
-    xtrans = momentarm_vecs_new['xPlane']['ma_unscaled'] - momentarm_vecs_old['xPlane']['ma_unscaled']
-    ytrans = momentarm_vecs_new['yPlane']['ma_unscaled'] - momentarm_vecs_old['yPlane']['ma_unscaled']
-    ztrans = momentarm_vecs_new['zPlane']['ma_unscaled'] - momentarm_vecs_old['zPlane']['ma_unscaled']
-    xform(loc['x'], t=xtrans, r=1, ws=1)
-    xform(loc['y'], t=ytrans, r=1, ws=1)
-    xform(loc['z'], t=ztrans, r=1, ws=1)
-    setKeyframe(loc['x'],loc['y'],loc['z'])
-    # key moment arm attributes of muscle object
-    setAttr(muscle_vec.Xma, momentarm_vecs_new['xPlane']['ma_actual'])
-    setAttr(muscle_vec.Yma, momentarm_vecs_new['yPlane']['ma_actual'])
-    setAttr(muscle_vec.Zma, momentarm_vecs_new['zPlane']['ma_actual'])
-    setKeyframe(muscle_vec.Xma, v=momentarm_vecs_new['xPlane']['ma_actual'], at='Xma')
-    setKeyframe(muscle_vec.Yma, v=momentarm_vecs_new['yPlane']['ma_actual'], at='Yma')
-    setKeyframe(muscle_vec.Zma, v=momentarm_vecs_new['zPlane']['ma_actual'], at='Zma')
-    if attributeQuery('uXma', node=muscle_vec, exists=1) == 1:
-        setAttr(muscle_vec.uXma, momentarm_vecs_new['xPlane']['ma_unscaled_val'])
-        setAttr(muscle_vec.uYma, momentarm_vecs_new['yPlane']['ma_unscaled_val'])
-        setAttr(muscle_vec.uZma, momentarm_vecs_new['zPlane']['ma_unscaled_val'])
-        setKeyframe(muscle_vec.uXma, v=momentarm_vecs_new['xPlane']['ma_unscaled_val'], at='uXma')
-        setKeyframe(muscle_vec.uYma, v=momentarm_vecs_new['yPlane']['ma_unscaled_val'], at='uYma')
-        setKeyframe(muscle_vec.uZma, v=momentarm_vecs_new['zPlane']['ma_unscaled_val'], at='uZma')
-    return momentarm_vecs_new
-
-
-### step through frames, inspiration from David Baier's outputRelMotion shelf tool
-def keyFrameHelper(sel, proxy, muscle_vec, momentarm_objs):
-    transformList = ls(tr=1)
-    frame=findKeyframe(transformList, hi="both",which="first")
-    lastframe=findKeyframe(transformList, hi="both",which="last")
-    assert(frame-lastframe != 0), "No animation found!"
-    previousframe = lastframe+1
-    currentTime(frame, update=1, edit=1)
-    progressWindow(title="Grabbing moment arms...", min=frame, max=lastframe, progress=frame, status = "Crunching frame: "+str(frame), isInterruptable=True)
-    momentarm_vecs_old = armDecomposer(sel, proxy)
-    while frame<=lastframe:
-        momentarm_vecs_new = frameUpdate(sel, proxy, muscle_vec[0], momentarm_objs, momentarm_vecs_old)
-        frame=findKeyframe(transformList, hi="both",which="next")
-        if progressWindow(q=1, isCancelled=1):
-            break
-        if (frame-previousframe) == 0:
-            break
-        previousframe = frame
-        momentarm_vecs_old = momentarm_vecs_new
-        progressWindow(edit=1, progress=frame, status=('Processing frame: '+str(frame)))
-        currentTime(frame, update=1, edit=1)
-    progressWindow(endProgress=1)
-
-
-### recalculate world space vectors for joint proxy
-def updateCoordinateSystem(proxy):
-    xUnit = makeVector(proxy['joint'],proxy['x'])
-    yUnit = makeVector(proxy['joint'],proxy['y'])
-    zUnit = makeVector(proxy['joint'],proxy['z'])
-    xyzUnits = {'xUnit':xUnit,'yUnit':yUnit,'zUnit':zUnit}
-    return(xyzUnits)
-
-
-### dot muscle vector with each axis to get component in plane
-def projectionHero(mode, target, cs):
-    xUnit = cs['xUnit']
-    yUnit = cs['yUnit']
-    zUnit = cs['zUnit']
-    xAxisP = dot(target,xUnit)
-    yAxisP = dot(target,yUnit)
-    zAxisP = dot(target,zUnit)
-    xPlaneP = target-(xAxisP*xUnit)
-    yPlaneP = target-(yAxisP*yUnit)
-    zPlaneP = target-(zAxisP*zUnit)
-    xAxisP = dot(target,xUnit)
-    yAxisP = dot(target,yUnit)
-    zAxisP = dot(target,zUnit)
-    result = {'xPlane':xPlaneP,
-              'yPlane':yPlaneP,
-              'zPlane':zPlaneP,
-              'xAxis':xAxisP,
-              'yAxis':yAxisP,
-              'zAxis':zAxisP}
-    return result[mode]
-
-
-### cross vectors to find area of parallelogram as magnitude of orthogonal vector
-def armDecomposer(sel, proxy):
-    cs = updateCoordinateSystem(proxy)
-    muscle_CB = makeVector(sel['C'],sel['B'])
-    u_muscle_CB = muscle_CB/muscle_CB.length()
-    joint_muscle_BA = makeVector(sel['B'],sel['A'])
-    result = {}
-    for case in ['xPlane','yPlane','zPlane']:
-        if case == 'xPlane':
-            axis = 'xUnit'
-        elif case == 'yPlane':
-            axis = 'yUnit'
-        elif case == 'zPlane':
-            axis = 'zUnit'
-        result[case]={}
-        muscle_CB_proj = projectionHero(case, muscle_CB, cs)
-        u_muscle_CB_proj = muscle_CB_proj/muscle_CB_proj.length()
-        joint_muscle_BA_proj = projectionHero(case, joint_muscle_BA, cs)
-        dist_T_proj = dot(joint_muscle_BA_proj, u_muscle_CB_proj)
-        pos_P_xyz = dt.Vector(xform(sel['B'], q=1, t=1, ws=1)+(dist_T_proj*u_muscle_CB_proj))
-        ma_unprojected = dt.Vector(xform(proxy['joint'], q=1, t=1, ws=1))-pos_P_xyz
-        ma_unscaled = (-1*projectionHero(case, ma_unprojected, cs))
-        #print('unscaled MA for '+str(case)+' is '+str(ma_unscaled.length()))
-        #<LEGACY PARALLELOGRAM METHOD, RETURNS SCALAR>
-        #joint_muscle_BA_proj_para = projectionHero(case, joint_muscle_BA, cs)
-        #parallelogram = cross(muscle_CB_proj,joint_muscle_BA_proj)
-        #ma_unscaled_para = round(parallelogram.length()/muscle_CB_proj.length(),5)
-        #</LEGACY PARALLELOGRAM METHOD>
-        scale_factor = muscle_CB_proj.length()/muscle_CB.length()
-        ma_scaled = ma_unscaled*scale_factor
-        moment_about_joint = cross(ma_scaled, muscle_CB_proj)
-        moment_about_axis = dot(cs[axis], moment_about_joint)
-        getSign = lambda a: (a>0) - (a<0)
-        ma_sign = getSign(moment_about_axis)
-        ma_actual = ma_scaled.length()*ma_sign
-        #print('actual MA for '+str(case)+' is '+str(ma_actual))
-        result[case]['ma_unscaled'] = ma_unscaled
-        result[case]['ma_unscaled_val'] = ma_unscaled.length()*ma_sign
-        result[case]['ma_scaled'] = ma_scaled
-        result[case]['scale_factor'] = scale_factor
-        result[case]['ma_actual'] = ma_actual
-    return result
+## get muscle name from user input
+def getMuscleNameUI():
+    if window('muscle_window',exists=1) == True:
+        deleteUI('muscle_window')
+    mainWindow = window('muscle_window', title='Create Muscle',rtf=1, w=300, h=160)
+    frameLayout(label='Muscle Name Input')
+    columnLayout(columnOffset=('both',20))
+    text(label='')
+    text(label='Select (in order):')
+    text(label=' 1) Proximal Joint Coordinate System (JCS)')
+    text(label=' 2) Distal Joint Coordinate System (JCS)')
+    text(label=' 3) Proximal Muscle Marker')
+    text(label=' 4) Distal Muscle Marker')
+    text(label='')
+    text(label='')
+    text(label='Muscle Name')
+    textField('muscle_name_field', text='MuscleName')
+    text(label='')
+    text(label='')
+    button(label='Create Muscle',command=doTheThing)
+    text(label='')
+    showWindow(mainWindow)
