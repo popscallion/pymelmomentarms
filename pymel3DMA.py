@@ -6,7 +6,7 @@ def doTheThing(muscle_name):
     muscle_name = textField('muscle_name_field', q=1,text=1)
     sel = getSelectionSet()
     ## setup: make muscle arrow for visualization
-    mus_arrow = makeArrow(sel['C'], sel['B'], 'mus_'+muscle_name, 'yellow')
+    mus_arrow = makeMuscle(sel['C'], sel['B'], 'mus_'+muscle_name, 'red')
     ## setup: make proxy
     proxy = makeUnitAxes(muscle_name, sel, united=0)
     ## evaluate every frame:
@@ -212,6 +212,42 @@ def makeVector(locA,locB):
     posB = dt.Vector(xform(locB,q=1,t=1,ws=1))
     vectAB = posB - posA
     return vectAB
+
+
+## make muscle cylinder arrow for visualization
+def makeMuscle(sp, ep, obj_name, radius = 0.1, tint='red', alpha=0.75):
+    ## sp: start point as dt.Vector,
+    ## ep: end point as dt.Vector,
+    ## obj_name: name of vector object,
+    ## set up variables
+    size = makeVector(sp,ep).length()
+    obj_length_name = "length_"+obj_name
+    obj_scale_name = "sf_"+obj_name
+    obj_mult_name = "multiply_"+obj_name
+    cyl_height = size
+    cyl_radius = radius
+    ## make cylinder
+    muscle = polyCylinder(r=cyl_radius,h=cyl_height, ax=[1,0,0], n='cyl_'+obj_name)[0]
+    assignColor(muscle, tint, alpha)
+    xform(muscle, piv=[(cyl_height*-1)/2,0,0])
+    ## constrain muscle to follow ep
+    pointConstraint(sp,muscle)
+    aimConstraint(ep,muscle,aimVector=[1,0,0],worldUpType="vector")
+    hide(listRelatives(muscle)[-2:])
+    ## scale muscle by distance between sp and ep,
+    ## parentMatrix distanceBetween node always gets worldspace distances, regardless of parenting
+    createNode("distanceBetween", n=obj_length_name)
+    connectAttr(sp+".parentMatrix", obj_length_name+'.inMatrix1',f=1)
+    connectAttr(ep+".parentMatrix", obj_length_name+'.inMatrix2',f=1)
+    for axis in ['X', 'Y', 'Z']:
+        connectAttr(sp+".translate"+axis, obj_length_name+'.point1'+axis,f=1)
+        connectAttr(ep+".translate"+axis, obj_length_name+'.point2'+axis,f=1)
+    createNode("multiplyDivide", n=obj_scale_name)
+    setAttr(obj_scale_name+".operation", 2)
+    connectAttr(obj_length_name+".distance", obj_scale_name+".input1X", f=1)
+    setAttr(obj_scale_name+".input2X",size)
+    connectAttr(obj_scale_name+".outputX",muscle+".scaleX",f=1)
+    return muscle
 
 ## make vector arrow for visualization
 def makeArrow(sp, ep, obj_name, tint='yellow', alpha=0.75):
