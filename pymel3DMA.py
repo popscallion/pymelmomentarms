@@ -6,7 +6,7 @@ def doTheThing(muscle_name):
     muscle_name = textField('muscle_name_field', q=1,text=1)
     sel = getSelectionSet()
     ## setup: make muscle arrow for visualization
-    mus_arrow = makeMuscle(sel['C'], sel['B'], 'mus_'+muscle_name, 'red')
+    mus_arrow = makeMuscle(sel['C'], sel['B'], 'mus_'+muscle_name)
     ## setup: make proxy
     proxy = makeUnitAxes(muscle_name, sel, united=0)
     ## evaluate every frame:
