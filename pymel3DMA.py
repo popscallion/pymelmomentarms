@@ -215,7 +215,7 @@ def makeVector(locA,locB):
 
 
 ## make muscle cylinder arrow for visualization
-def makeMuscle(sp, ep, obj_name, radius = 0.1, tint='red', alpha=0.75):
+def makeMuscle(sp, ep, obj_name, radius = 0.05, tint='red', alpha=0.75):
     ## sp: start point as dt.Vector,
     ## ep: end point as dt.Vector,
     ## obj_name: name of vector object,
