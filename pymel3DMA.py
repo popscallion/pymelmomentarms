@@ -317,6 +317,27 @@ def assignColor(target, tint, alpha):
             material_SG = mat_name+'SG'
         sets(material_SG, edit=True, forceElement=target)
 
+## looks for frames where the selected object has missing data (no translateX attribute) and sets calculated data (JCS, moment arms) to 0
+def clearMissingData():
+    transformList = ls(sl=1)
+    dataTransforms = { node for node in transformList if ('data' in node[-4:])}
+    maTransforms = {node for node in transformList if node.hasAttr('Xaxis Moment Arm')}
+    playbackRange = { float(time) for time in range(int(playbackOptions(q=1, minTime = True)), int(playbackOptions(q=1, maxTime = True)+1))}
+    framesWithData = set(keyframe(sel+'.translate',q=True))
+    blankFrames = sorted(playbackRange-framesWithData)
+    for blankFrame in blankFrames:
+        currentTime(blankFrame, update=1, edit=1)
+        for dataTransform in dataTransforms:
+            for transformationType in ['translateX','translateY','translateZ','rotateX','rotateY','rotateZ']:
+                attrNameT = dataTransform+'.'+transformationType
+                setAttr(attrNameT,0)
+                setKeyframe(attrNameT)
+        for maTransform in maTransforms:
+            for maType in ['Xaxis Moment Arm','Yaxis Moment Arm','Zaxis Moment Arm']:
+                attrNameM = maTransform+'.'+maType
+                setAttr(attrNameM,0)
+                setKeyframe(attrNameM)
+
 
 
 ## get muscle name from user input
