@@ -318,7 +318,7 @@ def assignColor(target, tint, alpha):
         sets(material_SG, edit=True, forceElement=target)
 
 
-def zeroMissingData():
+def zeroMissingData(*args):
     sel = ls(sl=1)
     targets = sel[:-1]
     reference = sel[-1]
@@ -347,7 +347,7 @@ def zeroMissingData():
             else:
                 pass
 
-def hideByHidden():
+def hideByHidden(*args):
     sel = ls(sl=1)
     targets = sel[:-1]
     reference = sel[-1]
