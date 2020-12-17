@@ -347,6 +347,32 @@ def zeroMissingData(*args):
             else:
                 pass
 
+def hideByMissing(*args):
+    sel = ls(sl=1)
+    targets = sel[:-1]
+    reference = sel[-1]
+    TxKeys = set(keyframe(reference.translateX, query=True))
+    TyKeys = set(keyframe(reference.translateY, query=True))
+    TzKeys = set(keyframe(reference.translateZ, query=True))
+    RxKeys = set(keyframe(reference.rotateX, query=True))
+    RyKeys = set(keyframe(reference.rotateY, query=True))
+    RzKeys = set(keyframe(reference.rotateZ, query=True))
+    keyedFrames = set.intersection(TxKeys, TyKeys, TzKeys, RxKeys, RyKeys, RzKeys)
+    playbackRange = { float(time) for time in range(int(playbackOptions(q=1, minTime = True)), int(playbackOptions(q=1, maxTime = True)+1))}
+    missingFrames = sorted(playbackRange - keyedFrames)
+    for frame in playbackRange:
+        currentTime(frame, update=1, edit=1)
+        if frame in missingFrames:
+            for selectedObject in sel:
+                vizName = selectedObject+'.visibility'
+                setAttr(vizName,False)
+                setKeyframe(vizName)
+        else:
+            for selectedObject in sel:
+                vizName = selectedObject+'.visibility'
+                setAttr(vizName,True)
+                setKeyframe(vizName)
+
 def hideByHidden(*args):
     sel = ls(sl=1)
     targets = sel[:-1]
@@ -364,7 +390,7 @@ def hideByHidden(*args):
 def zeroMissingDataUI():
     if window('zero_window',exists=1) == True:
         deleteUI('zero_window')
-    mainWindow = window('zero_window', title='Zero Missing Data',rtf=1, w=300, h=160)
+    mainWindow = window('zero_window', title='Zero Missing Data',rtf=1, w=160, h=160)
     frameLayout(label='Zero Missing')
     columnLayout(columnOffset=('both',20))
     text(label='')
@@ -376,17 +402,40 @@ def zeroMissingDataUI():
     text(label="Looks for frames with missing translation/rotation data on the reference object.")
     text(label="Zeroes out translation/rotation and moment arm attributes on each target object.")
     text(label='')
+    text(label='')
     button(label='Zero Missing',command=zeroMissingData)
+    text(label='')
+    showWindow(mainWindow)
+
+## prompt for hideByMissing()
+def hideByMissingUI():
+    if window('hidemissing_window',exists=1) == True:
+        deleteUI('hidemissing_window')
+    mainWindow = window('hidemissing_window', title='Hide Missing',rtf=1, w=300, h=160)
+    frameLayout(label='Hide Objects by Missing')
+    columnLayout(columnOffset=('both',20))
+    text(label='')
+    text(label='Select (in order):')
+    text(label=' 1) Target Object(s)')
+    text(label=' 2) Reference Object (this has to come last!)')
+    text(label='')
+    text(label='')
+    text(label="Looks for frames with missing translation/rotation data on the reference object.")
+    text(label="Hides all selected objects at every frame where data is missing for the reference object.")
+    text(label="The reference object will also be hidden.")
+    text(label='')
+    text(label='')
+    button(label='Hide Missing',command=hideByMissing)
     text(label='')
     showWindow(mainWindow)
 
 
 ## prompt for hideByHidden()
 def hideByHiddenUI():
-    if window('hiding_window',exists=1) == True:
-        deleteUI('hiding_window')
-    mainWindow = window('hiding_window', title='Match Visibility',rtf=1, w=300, h=160)
-    frameLayout(label='Hide Objects')
+    if window('hidehidden_window',exists=1) == True:
+        deleteUI('hidehidden_window')
+    mainWindow = window('hidehidden_window', title='Match Visibility',rtf=1, w=300, h=160)
+    frameLayout(label='Hide Objects by Reference')
     columnLayout(columnOffset=('both',20))
     text(label='')
     text(label='Select (in order):')
