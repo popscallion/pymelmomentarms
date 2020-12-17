@@ -317,27 +317,89 @@ def assignColor(target, tint, alpha):
             material_SG = mat_name+'SG'
         sets(material_SG, edit=True, forceElement=target)
 
-## looks for frames where the selected object has missing data (no translateX attribute) and sets calculated data (JCS, moment arms) to 0
-def clearMissingData():
-    transformList = ls(sl=1)
-    dataTransforms = { node for node in transformList if ('data' in node[-4:])}
-    maTransforms = {node for node in transformList if node.hasAttr('Xaxis Moment Arm')}
-    playbackRange = { float(time) for time in range(int(playbackOptions(q=1, minTime = True)), int(playbackOptions(q=1, maxTime = True)+1))}
-    framesWithData = set(keyframe(sel+'.translate',q=True))
-    blankFrames = sorted(playbackRange-framesWithData)
-    for blankFrame in blankFrames:
-        currentTime(blankFrame, update=1, edit=1)
-        for dataTransform in dataTransforms:
-            for transformationType in ['translateX','translateY','translateZ','rotateX','rotateY','rotateZ']:
-                attrNameT = dataTransform+'.'+transformationType
-                setAttr(attrNameT,0)
-                setKeyframe(attrNameT)
-        for maTransform in maTransforms:
-            for maType in ['Xaxis Moment Arm','Yaxis Moment Arm','Zaxis Moment Arm']:
-                attrNameM = maTransform+'.'+maType
-                setAttr(attrNameM,0)
-                setKeyframe(attrNameM)
 
+def zeroMissingData():
+    sel = ls(sl=1)
+    targets = sel[:-1]
+    reference = sel[-1]
+    TxKeys = set(keyframe(reference.translateX, query=True))
+    TyKeys = set(keyframe(reference.translateY, query=True))
+    TzKeys = set(keyframe(reference.translateZ, query=True))
+    RxKeys = set(keyframe(reference.rotateX, query=True))
+    RyKeys = set(keyframe(reference.rotateY, query=True))
+    RzKeys = set(keyframe(reference.rotateZ, query=True))
+    keyedFrames = set.intersection(TxKeys, TyKeys, TzKeys, RxKeys, RyKeys, RzKeys)
+    playbackRange = { float(time) for time in range(int(playbackOptions(q=1, minTime = True)), int(playbackOptions(q=1, maxTime = True)+1))}
+    missingFrames = sorted(playbackRange - keyedFrames)
+    for frame in missingFrames:
+        currentTime(frame, update=1, edit=1)
+        for target in targets:
+            if target.hasAttr('XaxisMomentArm'):
+                for maType in ['XaxisMomentArm','YaxisMomentArm','ZaxisMomentArm']:
+                    attrNameM = target+'.'+maType
+                    setAttr(attrNameM,0)
+                    setKeyframe(attrNameM)
+            elif 'data' in target[-4:]:
+                for transformationType in ['translateX','translateY','translateZ','rotateX','rotateY','rotateZ']:
+                    attrNameT = target+'.'+transformationType
+                    setAttr(attrNameT,0)
+                    setKeyframe(attrNameT)
+            else:
+                pass
+
+def hideByHidden():
+    sel = ls(sl=1)
+    targets = sel[:-1]
+    reference = sel[-1]
+    visibilityFrames = sorted(keyframe(reference.visibility, query=True))
+    for frame in visibilityFrames:
+        currentTime(frame, update=1, edit=1)
+        referenceValue = reference.visibility.get()
+        for target in targets:
+            vizName = target+'.visibility'
+            setAttr(vizName,referenceValue)
+            setKeyframe(vizName)
+
+## prompt for zeroMissingData()
+def zeroMissingDataUI():
+    if window('zero_window',exists=1) == True:
+        deleteUI('zero_window')
+    mainWindow = window('zero_window', title='Zero Missing Data',rtf=1, w=300, h=160)
+    frameLayout(label='Zero Missing')
+    columnLayout(columnOffset=('both',20))
+    text(label='')
+    text(label='Select (in order):')
+    text(label=' 1) Target Object(s)')
+    text(label=' 2) Reference Object (this has to come last!)')
+    text(label='')
+    text(label='')
+    text(label="Looks for frames with missing translation/rotation data on the reference object and zeroes out translation/rotation and moment arm attributes on each target object.")
+    text(label='')
+    text(label='')
+    button(label='Zero Missing',command=zeroMissingData)
+    text(label='')
+    showWindow(mainWindow)
+
+
+## prompt for hideByHidden()
+def hideByHiddenUI():
+    if window('hiding_window',exists=1) == True:
+        deleteUI('hiding_window')
+    mainWindow = window('hiding_window', title='Match Visibility',rtf=1, w=300, h=160)
+    frameLayout(label='Hide Objects')
+    columnLayout(columnOffset=('both',20))
+    text(label='')
+    text(label='Select (in order):')
+    text(label=' 1) Target Object(s)')
+    text(label=' 2) Reference Object (this has to come last!)')
+    text(label='')
+    text(label='')
+    text(label='This will set keys matching the visibility attribute of each target object to the reference object')
+    text(label='')
+    text(label='')
+    button(label='Match Visibility',command=hideByHidden)
+    text(label='')
+    showWindow(mainWindow)
 
 
 ## get muscle name from user input
