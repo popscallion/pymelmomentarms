@@ -2,30 +2,35 @@ from pymel.all import *
 import pymel.core.datatypes as dt
 
 ## does the thing, runs on UI button click
-def doTheThing(muscle_name):
-    muscle_name = textField('muscle_name_field', q=1,text=1)
+def doTheThing(muscle_name, radios):
+    rotation_order = radioCollection(radios, q=1, sl=1)
     sel = getSelectionSet()
     ## setup: make muscle arrow for visualization
     mus_arrow = makeMuscle(sel['C'], sel['B'], 'mus_'+muscle_name)
     ## setup: make proxy
-    proxy = makeUnitAxes(muscle_name, sel, united=0)
+    proxy = makeUnitAxes(muscle_name+'_'+rotation_order, sel, united=0)
     ## evaluate every frame:
-    updateFrame(sel, proxy)
+    updateFrame(sel, proxy, rotation_order)
 
 ## every frame: move proxy to new location, transform and key proxy axes using X, XY, and XYZ rotations from offset matrix
-def updateProxy(sel, proxy):
-    offset_mat = findOffsetMatrix(sel['A'], sel['A*'])
+def updateProxy(sel, proxy, order):
+    offset_mat = findOffsetMatrix(order, sel['A'], sel['A*'])
     ## reset warp:
     xform(proxy['x_a'],proxy['y_a'],proxy['z_a'], ro=[0,0,0], r=0, os=1)
-    ## X:
-    xform(proxy['x_a'],proxy['y_a'],proxy['z_a'], ro=[offset_mat['rX'],0,0], r=1, os=1)
-    # print('rotating XYZ by rX: '+str(offset_mat['rX']))
-    ## XY:
-    xform(proxy['y_a'],proxy['z_a'], ro=[0,offset_mat['rY'],0], r=1, os=1)
-    # print('rotating YZ by rY: '+str(offset_mat['rY']))
-    ## XYZ:
-    xform(proxy['z_a'], ro=[0,0,offset_mat['rZ']], r=1, os=1)
-    # print('rotating Z by rZ: '+str(offset_mat['rZ']))
+    if order == 'XYZ':
+        ## rotate XYZ by rX:
+        xform(proxy['x_a'],proxy['y_a'],proxy['z_a'], ro=[offset_mat['rX'],0,0], r=1, os=1)
+        ## rotate YZ by rY:
+        xform(proxy['y_a'],proxy['z_a'], ro=[0,offset_mat['rY'],0], r=1, os=1)
+        ## rotate Z by rZ:
+        xform(proxy['z_a'], ro=[0,0,offset_mat['rZ']], r=1, os=1)
+    else:    
+        ## rotate ZYX by rZ:
+        xform(proxy['z_a'],proxy['y_a'],proxy['x_a'], ro=[0,0,offset_mat['rZ']], r=1, os=1)
+        ## rotate YX by rY:
+        xform(proxy['y_a'],proxy['x_a'], ro=[0,offset_mat['rY'],0], r=1, os=1)
+        ## rotate X by rX:
+        xform(proxy['x_a'], ro=[offset_mat['rX'],0,0], r=1, os=1)
     ## key proxy transformations:
     for axis in ['x_a','y_a','z_a']:
         setKeyframe(proxy[axis], at='rotate')
@@ -76,7 +81,7 @@ def calculateMomentArms(sel, proxy, mus_vec, unit_vecs, frame):
     return scaled_moment_arms
 
 ## frame updater, inspiration from David Baier's outputRelMotion shelf tool
-def updateFrame(sel, proxy):
+def updateFrame(sel, proxy, order):
     transformList = ls(tr=1)
     frame=findKeyframe(transformList, hi="both",which="first")
     lastframe=findKeyframe(transformList, hi="both",which="last")
@@ -92,7 +97,7 @@ def updateFrame(sel, proxy):
             break
         previousframe = frame
         mus_vec = makeVector(sel['C'],sel['B'])
-        updateProxy(sel, proxy)
+        updateProxy(sel, proxy, order)
         unit_vecs = updateUnitVecs(proxy)
         calculateMomentArms(sel, proxy, mus_vec, unit_vecs, frame)
         progressWindow(edit=1, progress=frame, status=('Processing frame: '+str(frame)))
@@ -100,11 +105,12 @@ def updateFrame(sel, proxy):
     progressWindow(endProgress=1)
 
 ## calculates a worldspace offset matrix to capture transformations between distal and proximal joint coordinate systems
-def findOffsetMatrix(obj1, obj2):
+def findOffsetMatrix(order, obj1, obj2):
+    inverse_order = order[::-1]
     obj2_mat = obj2.attr('worldMatrix').get()
     obj1_imat = obj1.attr('worldMatrix').get().inverse()
     offset_o1o2 = dt.Matrix(obj2_mat*obj1_imat)
-    offset_o1o2_Euler = degrees(dt.EulerRotation.decompose(offset_o1o2,'ZYX'))
+    offset_o1o2_Euler = degrees(dt.EulerRotation.decompose(offset_o1o2,inverse_order))
     output = {  'mat':offset_o1o2,
                 'rX':dt.round(offset_o1o2_Euler[0],8),
                 'rY':dt.round(offset_o1o2_Euler[1],8),
@@ -470,6 +476,12 @@ def getMuscleNameUI():
     textField('muscle_name_field', text='MuscleName')
     text(label='')
     text(label='')
-    button(label='Create Muscle',command=doTheThing)
+    radios = radioCollection('rotationOrderRadios')
+    radioButton('ZYX', label='ZYX intrinsic (XROMM default)', sl=True)
+    radioButton('XYZ', label='XYZ intrinsic')
+    text(label='')
+    text(label='')
+    muscle_name = textField('muscle_name_field', q=1,text=1)
+    button(label='Create Muscle', command=lambda *args: doTheThing(muscle_name, radios))
     text(label='')
     showWindow(mainWindow)
