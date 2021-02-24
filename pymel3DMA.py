@@ -3,12 +3,13 @@ import pymel.core.datatypes as dt
 
 ## does the thing, runs on UI button click
 def doTheThing(muscle_name, radios):
+    name = textField(muscle_name, q=1, tx=1)
     rotation_order = radioCollection(radios, q=1, sl=1)
     sel = getSelectionSet()
     ## setup: make muscle arrow for visualization
-    mus_arrow = makeMuscle(sel['C'], sel['B'], 'mus_'+muscle_name)
+    mus_arrow = makeMuscle(sel['C'], sel['B'], 'mus_'+name)
     ## setup: make proxy
-    proxy = makeUnitAxes(muscle_name+'_'+rotation_order, sel, united=0)
+    proxy = makeUnitAxes(name+'_'+rotation_order, sel, united=0)
     ## evaluate every frame:
     updateFrame(sel, proxy, rotation_order)
 
@@ -24,7 +25,7 @@ def updateProxy(sel, proxy, order):
         xform(proxy['y_a'],proxy['z_a'], ro=[0,offset_mat['rY'],0], r=1, os=1)
         ## rotate Z by rZ:
         xform(proxy['z_a'], ro=[0,0,offset_mat['rZ']], r=1, os=1)
-    else:    
+    else:
         ## rotate ZYX by rZ:
         xform(proxy['z_a'],proxy['y_a'],proxy['x_a'], ro=[0,0,offset_mat['rZ']], r=1, os=1)
         ## rotate YX by rY:
@@ -456,7 +457,6 @@ def hideByHiddenUI():
     text(label='')
     showWindow(mainWindow)
 
-
 ## get muscle name from user input
 def getMuscleNameUI():
     if window('muscle_window',exists=1) == True:
@@ -473,7 +473,7 @@ def getMuscleNameUI():
     text(label='')
     text(label='')
     text(label='Muscle Name')
-    textField('muscle_name_field', text='MuscleName')
+    muscle_name = textField('muscle_name_field', text='MuscleName')
     text(label='')
     text(label='')
     radios = radioCollection('rotationOrderRadios')
@@ -481,7 +481,6 @@ def getMuscleNameUI():
     radioButton('XYZ', label='XYZ intrinsic')
     text(label='')
     text(label='')
-    muscle_name = textField('muscle_name_field', q=1,text=1)
     button(label='Create Muscle', command=lambda *args: doTheThing(muscle_name, radios))
     text(label='')
     showWindow(mainWindow)
