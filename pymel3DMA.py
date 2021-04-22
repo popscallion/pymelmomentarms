@@ -1,5 +1,6 @@
 from pymel.all import *
 import pymel.core.datatypes as dt
+import csv
 
 ## does the thing, runs on UI button click
 def doTheThing(muscle_name, radios):
@@ -230,7 +231,6 @@ def makeMuscle(sp, ep, obj_name, radius = 0.05, tint='red', alpha=0.75):
     size = makeVector(sp,ep).length()
     obj_length_name = "length_"+obj_name
     obj_scale_name = "sf_"+obj_name
-    obj_mult_name = "multiply_"+obj_name
     cyl_height = size
     cyl_radius = radius
     ## make cylinder
@@ -257,15 +257,11 @@ def makeMuscle(sp, ep, obj_name, radius = 0.05, tint='red', alpha=0.75):
     return muscle
 
 ## make vector arrow for visualization
-def makeArrow(sp, ep, obj_name, tint='yellow', alpha=0.75):
+def makeArrow(sp, ep, obj_name, size, tint='yellow', alpha=0.75):
     ## sp: start point as dt.Vector,
     ## ep: end point as dt.Vector,
     ## obj_name: name of vector object,
     ## set up variables
-    size = makeVector(sp,ep).length()
-    obj_length_name = "length_"+obj_name
-    obj_scale_name = "sf_"+obj_name
-    obj_mult_name = "multiply_"+obj_name
     cyl_height = size*0.8
     cone_height = size*0.2
     cyl_radius = size*0.02
@@ -277,25 +273,111 @@ def makeArrow(sp, ep, obj_name, tint='yellow', alpha=0.75):
     arrow = polyUnite(cyl_primitive, cone_primitive, n=obj_name, ch=0)
     assignColor(arrow, tint, alpha)
     xform(arrow, piv=[(cyl_height*-1)/2,0,0])
-    ## constrain arrow to follow ep
-    pointConstraint(sp,arrow)
-    aimConstraint(ep,arrow,aimVector=[1,0,0],worldUpType="vector")
-    hide(listRelatives(arrow)[-2:])
-    ## scale arrow by distance between sp and ep,
-    ## parentMatrix distanceBetween node always gets worldspace distances, regardless of parenting
+    return arrow
+
+
+## make 3D arrows for visualization
+def makeForceArrows(sp, ep_dict, scale_dict, obj_name, alpha=0.75):
+    obj_scale_nameX = "sfX_"+obj_name
+    obj_scale_nameY = "sfY_"+obj_name
+    obj_scale_nameZ = "sfZ_"+obj_name
+    obj_scale_nameXYZ = "sfXYZ_"+obj_name
+    obj_length_name = "length_"+obj_name
+
+    cyl_height_factor = 0.8
+    cyl_rad_factor = 0.02
+    cone_height_factor = 0.2
+    cone_rad_factor = 0.04
+
+    cyl_heights = {'XYZ':scale_dict['XYZ']*cyl_height_factor, 'X':scale_dict['X']*cyl_height_factor,'Y':scale_dict['Y']*cyl_height_factor,'Z':scale_dict['Z']*cyl_height_factor}
+    cyl_rads = {'XYZ':scale_dict['XYZ']*cyl_rad_factor, 'X':scale_dict['X']*cyl_rad_factor,'Y':scale_dict['Y']*cyl_rad_factor,'Z':scale_dict['Z']*cyl_rad_factor}
+    cone_heights = {'XYZ':scale_dict['XYZ']*cone_height_factor, 'X':scale_dict['X']*cone_height_factor,'Y':scale_dict['Y']*cone_height_factor,'Z':scale_dict['Z']*cone_height_factor}
+    cone_rads = {'XYZ':scale_dict['XYZ']*cone_rad_factor, 'X':scale_dict['X']*cone_rad_factor,'Y':scale_dict['Y']*cone_rad_factor,'Z':scale_dict['Z']*cone_rad_factor}
+
+    cyl_primitiveXYZ = polyCylinder(r=cyl_rads['XYZ'],h=cyl_heights['XYZ'], ax=[1,0,0], n='cyl_XYZ')
+    cyl_primitiveX = polyCylinder(r=cyl_rads['X'],h=cyl_heights['X'], ax=[1,0,0], n='cyl_X')
+    cyl_primitiveY = polyCylinder(r=cyl_rads['Y'],h=cyl_heights['Y'], ax=[0,1,0], n='cyl_Y')
+    cyl_primitiveZ = polyCylinder(r=cyl_rads['Z'],h=cyl_heights['Z'], ax=[0,0,1], n='cyl_Z')
+
+    cone_primitiveXYZ = polyCone(r=cone_rads['XYZ'],h=cone_heights['XYZ'], ax=[1,0,0], n='cone_XYZ')
+    cone_primitiveX = polyCone(r=cone_rads['X'],h=cone_heights['X'], ax=[1,0,0], n='cone_X')
+    cone_primitiveY = polyCone(r=cone_rads['Y'],h=cone_heights['Y'], ax=[0,1,0], n='cone_Y')
+    cone_primitiveZ = polyCone(r=cone_rads['Z'],h=cone_heights['Z'], ax=[0,0,1], n='cone_Z')
+
+    xform(cone_primitiveXYZ, piv=[cone_heights['XYZ']/2,0,0], t=[(cyl_heights['XYZ']+cone_heights['XYZ'])/2,0,0] )
+    xform(cone_primitiveX, piv=[cone_heights['X']/2,0,0], t=[(cyl_heights['X']+cone_heights['X'])/2,0,0] )
+    xform(cone_primitiveY, piv=[0,cone_heights['Y']/2,0], t=[0,(cyl_heights['Y']+cone_heights['Y'])/2,0] )
+    xform(cone_primitiveZ, piv=[0,0,cone_heights['Z']/2], t=[0,0,(cyl_heights['Z']+cone_heights['Z'])/2] )
+
+    arrowXYZ = polyUnite(cyl_primitiveXYZ, cone_primitiveXYZ, n=obj_name+'_XYZ', ch=0)
+    arrowX = polyUnite(cyl_primitiveX, cone_primitiveX, n=obj_name+'_X', ch=0)
+    arrowY = polyUnite(cyl_primitiveY, cone_primitiveY, n=obj_name+'_Y', ch=0)
+    arrowZ = polyUnite(cyl_primitiveZ, cone_primitiveZ, n=obj_name+'_Z', ch=0)
+    xform(arrowXYZ, t=[cyl_heights['XYZ']/2,0,0])
+    xform(arrowX, t=[cyl_heights['X']/2,0,0])
+    xform(arrowY, t=[0,cyl_heights['Y']/2,0])
+    xform(arrowZ, t=[0,0,cyl_heights['Z']/2])
+    xform(arrowXYZ, piv=[-cyl_heights['XYZ']/2,0,0])
+    xform(arrowX, piv=[-cyl_heights['X']/2,0,0])
+    xform(arrowY, piv=[0,-cyl_heights['Y']/2,0])
+    xform(arrowZ, piv=[0,0,-cyl_heights['Z']/2])
+    XYZ_mat = assignColor(arrowXYZ, 'dynamic', 1.0)
+    assignColor(arrowX, 'red', alpha)
+    assignColor(arrowY, 'green', alpha)
+    assignColor(arrowZ, 'blue', alpha)
+    dynLoc = spaceLocator(n='GRF_dynamicRGB')
+    arrowGroup = group(arrowXYZ, arrowX, arrowY, arrowZ, dynLoc, n='GRF_grp')
+    xform(arrowGroup, piv=[0,0,0])
+    #aim and scale xyz arrow
+    aimConstraint(ep_dict['XYZ'],arrowXYZ,aimVector=[1,0,0],worldUpType="vector")
     createNode("distanceBetween", n=obj_length_name)
     connectAttr(sp+".parentMatrix", obj_length_name+'.inMatrix1',f=1)
-    connectAttr(ep+".parentMatrix", obj_length_name+'.inMatrix2',f=1)
+    connectAttr(ep_dict['XYZ']+".parentMatrix", obj_length_name+'.inMatrix2',f=1)
     for axis in ['X', 'Y', 'Z']:
         connectAttr(sp+".translate"+axis, obj_length_name+'.point1'+axis,f=1)
-        connectAttr(ep+".translate"+axis, obj_length_name+'.point2'+axis,f=1)
-    createNode("multiplyDivide", n=obj_scale_name)
-    setAttr(obj_scale_name+".operation", 2)
-    connectAttr(obj_length_name+".distance", obj_scale_name+".input1X", f=1)
-    setAttr(obj_scale_name+".input2X",size)
-    connectAttr(obj_scale_name+".outputX",arrow[0]+".scaleX",f=1)
-    ## store vector magnitude as "Vector Length" attribute
-    return arrow
+        connectAttr(ep_dict['XYZ']+".translate"+axis, obj_length_name+'.point2'+axis,f=1)
+    createNode("multiplyDivide", n=obj_scale_nameXYZ)
+    setAttr(obj_scale_nameXYZ+".operation", 2)
+    connectAttr(obj_length_name+".distance", obj_scale_nameXYZ+".input1X", f=1)
+    setAttr(obj_scale_nameXYZ+".input2X",scale_dict['XYZ'])
+    connectAttr(obj_scale_nameXYZ+".outputX",arrowXYZ[0]+".scaleX",f=1)
+    connectAttr(obj_scale_nameXYZ+".outputX",arrowXYZ[0]+".scaleY",f=1)
+    connectAttr(obj_scale_nameXYZ+".outputX",arrowXYZ[0]+".scaleZ",f=1)
+    #scale other arrows
+    createNode("multiplyDivide", n=obj_scale_nameX)
+    createNode("multiplyDivide", n=obj_scale_nameY)
+    createNode("multiplyDivide", n=obj_scale_nameZ)
+    setAttr(obj_scale_nameX+".operation", 2)
+    setAttr(obj_scale_nameY+".operation", 2)
+    setAttr(obj_scale_nameZ+".operation", 2)
+    setAttr(obj_scale_nameX+".input2X",scale_dict['X'])
+    setAttr(obj_scale_nameY+".input2Y",scale_dict['Y'])
+    setAttr(obj_scale_nameZ+".input2X",scale_dict['Z'])
+    setAttr(obj_scale_nameZ+".input2Y",scale_dict['Z'])
+    setAttr(obj_scale_nameZ+".input2Z",scale_dict['Z'])
+    connectAttr(ep_dict['X']+".translateX",obj_scale_nameX+".input1X",f=1)
+    connectAttr(ep_dict['Y']+".translateY",obj_scale_nameY+".input1Y",f=1)
+    connectAttr(ep_dict['X']+".translateX",obj_scale_nameZ+".input1X",f=1)
+    connectAttr(ep_dict['Y']+".translateY",obj_scale_nameZ+".input1Y",f=1)
+    connectAttr(ep_dict['Z']+".translateZ",obj_scale_nameZ+".input1Z",f=1)
+    connectAttr(obj_scale_nameX+".outputX",arrowX[0]+".scaleX",f=1)
+    connectAttr(obj_scale_nameX+".outputX",arrowX[0]+".scaleY",f=1)
+    connectAttr(obj_scale_nameX+".outputX",arrowX[0]+".scaleZ",f=1)
+    connectAttr(obj_scale_nameY+".outputY",arrowY[0]+".scaleX",f=1)
+    connectAttr(obj_scale_nameY+".outputY",arrowY[0]+".scaleY",f=1)
+    connectAttr(obj_scale_nameY+".outputY",arrowY[0]+".scaleZ",f=1)
+    connectAttr(obj_scale_nameZ+".outputZ",arrowZ[0]+".scaleX",f=1)
+    connectAttr(obj_scale_nameZ+".outputZ",arrowZ[0]+".scaleY",f=1)
+    connectAttr(obj_scale_nameZ+".outputZ",arrowZ[0]+".scaleZ",f=1)
+    #set dynamic color for XYZ arrow
+    connectAttr(obj_scale_nameZ+".outputX",dynLoc+'.translateX',f=1)
+    connectAttr(obj_scale_nameZ+".outputY",dynLoc+'.translateY',f=1)
+    connectAttr(obj_scale_nameZ+".outputZ",dynLoc+'.translateZ',f=1)
+    connectAttr(dynLoc+'.translateX',XYZ_mat+'.colorR',f=1)
+    connectAttr(dynLoc+'.translateY',XYZ_mat+'.colorG',f=1)
+    connectAttr(dynLoc+'.translateZ',XYZ_mat+'.colorB',f=1)
+    return arrowGroup
+
 
 ## check to see if muscle material exists. if yes, do nothing. if no, make one.
 def assignColor(target, tint, alpha):
@@ -305,6 +387,8 @@ def assignColor(target, tint, alpha):
         yellow_rgb = [0.800, 0.500, 0.000]
         green_rgb = [0.000, 0.800, 0.000]
         blue_rgb = [0.000, 0.000, 0.800]
+        white_rgb = [1.000, 1.000, 1.000]
+        black_rgb = [0.000, 0.000, 0.000]
         if not objExists(mat_name):
             material = shadingNode("lambert", asShader=True, name=mat_name)
             material_SG = sets(renderable=True, noSurfaceShader=True, empty=True, name=mat_name+'SG' )
@@ -316,6 +400,12 @@ def assignColor(target, tint, alpha):
                 material.color.set(green_rgb)
             elif tint == 'blue':
                 material.color.set(blue_rgb)
+            elif tint == 'white':
+                material.color.set(white_rgb)
+            elif tint == 'black':
+                material.color.set(black_rgb)
+            elif tint == 'dynamic':
+                material.color.set(black_rgb)
             material.transparency.set(alpha, alpha, alpha)
             material.outColor >> material_SG.surfaceShader
         else:
@@ -323,6 +413,7 @@ def assignColor(target, tint, alpha):
             material = mat_name
             material_SG = mat_name+'SG'
         sets(material_SG, edit=True, forceElement=target)
+        return material
 
 
 def zeroMissingData(*args):
@@ -456,6 +547,63 @@ def hideByHiddenUI():
     button(label='Match Visibility',command=hideByHidden)
     text(label='')
     showWindow(mainWindow)
+
+## imports XYZ forces from csv
+def importForces(path):
+    data = {}
+    with open(path) as f:
+        reader = csv.reader(f)
+        header = next(reader, None)
+        for h in header:
+            data[h] = []
+        data['FXYZ'] = []
+        for row in reader:
+            for h, v in zip(header, row):
+                data[h].append(float(v))
+    for row in data['frame']:
+        i = int(row)
+        data['FXYZ'].append(sqrt(data['FX'][i]**2+data['FY'][i]**2+data['FZ'][i]**2))
+    return(data)
+
+def keyForces(data, target, endFrame=None, mag=5):
+    # key end locator offsets using imported forces
+    startLoc = spaceLocator(n='GRF_start')
+    dataLoc = spaceLocator(n='GRF_data')
+    endLoc3D = spaceLocator(n='GRF_end3D')
+    endLocX = spaceLocator(n='GRF_endX')
+    endLocY = spaceLocator(n='GRF_endY')
+    endLocZ = spaceLocator(n='GRF_endZ')
+    createNode("multiplyDivide", n='GRF_mag')
+    setAttr('GRF_mag.operation', 1)
+    connectAttr('GRF_data.translate', 'GRF_mag.input1', f=1)
+    setAttr('GRF_mag.input2',[mag,mag,mag])
+    connectAttr("GRF_mag.output","GRF_end3D.translate",f=1)
+    connectAttr("GRF_mag.outputX","GRF_endX.translateX",f=1)
+    connectAttr("GRF_mag.outputY","GRF_endY.translateY",f=1)
+    connectAttr("GRF_mag.outputZ","GRF_endZ.translateZ",f=1)
+    parent(dataLoc,endLoc3D, endLocX, endLocY, endLocZ, startLoc)
+    matchTransform( startLoc, target, piv=True, pos=True, rot=True, scl=True)
+    parent(startLoc,target)
+    for i in data['frame']:
+        idx = int(i)
+        mayaFrame = idx+1
+        setKeyframe(dataLoc, at='tx', v=data['FX'][idx], t=[mayaFrame])
+        setKeyframe(dataLoc, at='ty', v=data['FY'][idx], t=[mayaFrame])
+        setKeyframe(dataLoc, at='tz', v=data['FZ'][idx], t=[mayaFrame])
+    if endFrame:
+        keyframe('GRF_data', relative=True, timeChange=-(len(data['frame'])-endFrame))
+    arrowScale = mag*max(data['FXYZ'])
+    XScale = mag*max(data['FX'])
+    YScale = mag*max(data['FY'])
+    ZScale = mag*max(data['FZ'])
+    arrowXYZ = makeForceArrows(startLoc, {'XYZ':endLoc3D,'X':endLocX,'Y':endLocY,'Z':endLocZ}, {'XYZ':arrowScale,'X':XScale,'Y':YScale,'Z':ZScale}, 'GRF',alpha=0.75)
+    parent(arrowXYZ, startLoc, r=True )
+
+
+
+
+
+
 
 ## get muscle name from user input
 def getMuscleNameUI():
