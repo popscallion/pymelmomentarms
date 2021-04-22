@@ -1,5 +1,6 @@
 from pymel.all import *
 import pymel.core.datatypes as dt
+from functools import partial
 import csv
 
 ## does the thing, runs on UI button click
@@ -282,7 +283,12 @@ def makeForceArrows(sp, ep_dict, scale_dict, obj_name, alpha=0.75):
     obj_scale_nameY = "sfY_"+obj_name
     obj_scale_nameZ = "sfZ_"+obj_name
     obj_scale_nameXYZ = "sfXYZ_"+obj_name
-    obj_length_name = "length_"+obj_name
+    obj_sum_name = "sum_"+obj_name
+    obj_square_name = "sq_"+obj_name
+    obj_sqrt_name = "sqrt_"+obj_name
+    obj_pythsq_name = "pythsq_"+obj_name
+    obj_pyth_name = "pyth_"+obj_name
+
 
     cyl_height_factor = 0.8
     cyl_rad_factor = 0.02
@@ -321,28 +327,15 @@ def makeForceArrows(sp, ep_dict, scale_dict, obj_name, alpha=0.75):
     xform(arrowX, piv=[-cyl_heights['X']/2,0,0])
     xform(arrowY, piv=[0,-cyl_heights['Y']/2,0])
     xform(arrowZ, piv=[0,0,-cyl_heights['Z']/2])
-    XYZ_mat = assignColor(arrowXYZ, 'dynamic', 1.0)
+    XYZ_mat = assignColor(arrowXYZ, 'dynamic', 0.0)
     assignColor(arrowX, 'red', alpha)
     assignColor(arrowY, 'green', alpha)
     assignColor(arrowZ, 'blue', alpha)
     dynLoc = spaceLocator(n='GRF_dynamicRGB')
     arrowGroup = group(arrowXYZ, arrowX, arrowY, arrowZ, dynLoc, n='GRF_grp')
     xform(arrowGroup, piv=[0,0,0])
-    #aim and scale xyz arrow
+    #aim xyz arrow
     aimConstraint(ep_dict['XYZ'],arrowXYZ,aimVector=[1,0,0],worldUpType="vector")
-    createNode("distanceBetween", n=obj_length_name)
-    connectAttr(sp+".parentMatrix", obj_length_name+'.inMatrix1',f=1)
-    connectAttr(ep_dict['XYZ']+".parentMatrix", obj_length_name+'.inMatrix2',f=1)
-    for axis in ['X', 'Y', 'Z']:
-        connectAttr(sp+".translate"+axis, obj_length_name+'.point1'+axis,f=1)
-        connectAttr(ep_dict['XYZ']+".translate"+axis, obj_length_name+'.point2'+axis,f=1)
-    createNode("multiplyDivide", n=obj_scale_nameXYZ)
-    setAttr(obj_scale_nameXYZ+".operation", 2)
-    connectAttr(obj_length_name+".distance", obj_scale_nameXYZ+".input1X", f=1)
-    setAttr(obj_scale_nameXYZ+".input2X",scale_dict['XYZ'])
-    connectAttr(obj_scale_nameXYZ+".outputX",arrowXYZ[0]+".scaleX",f=1)
-    connectAttr(obj_scale_nameXYZ+".outputX",arrowXYZ[0]+".scaleY",f=1)
-    connectAttr(obj_scale_nameXYZ+".outputX",arrowXYZ[0]+".scaleZ",f=1)
     #scale other arrows
     createNode("multiplyDivide", n=obj_scale_nameX)
     createNode("multiplyDivide", n=obj_scale_nameY)
@@ -369,10 +362,50 @@ def makeForceArrows(sp, ep_dict, scale_dict, obj_name, alpha=0.75):
     connectAttr(obj_scale_nameZ+".outputZ",arrowZ[0]+".scaleX",f=1)
     connectAttr(obj_scale_nameZ+".outputZ",arrowZ[0]+".scaleY",f=1)
     connectAttr(obj_scale_nameZ+".outputZ",arrowZ[0]+".scaleZ",f=1)
+    #scale XYZ arrow
+    createNode("multiplyDivide", n=obj_pythsq_name)
+    setAttr(obj_pythsq_name+".operation", 3)
+    connectAttr(ep_dict['XYZ']+".translateX",obj_pythsq_name+'.input1X',f=1)
+    connectAttr(ep_dict['XYZ']+".translateY",obj_pythsq_name+'.input1Y',f=1)
+    connectAttr(ep_dict['XYZ']+".translateZ",obj_pythsq_name+'.input1Z',f=1)
+    setAttr(obj_pythsq_name+".input2X",2)
+    setAttr(obj_pythsq_name+".input2Y",2)
+    setAttr(obj_pythsq_name+".input2Z",2)
+    createNode("plusMinusAverage", n=obj_sum_name)
+    connectAttr(obj_pythsq_name+".outputX",obj_sum_name+'.input1D[0]',f=1)
+    connectAttr(obj_pythsq_name+".outputY",obj_sum_name+'.input1D[1]',f=1)
+    connectAttr(obj_pythsq_name+".outputZ",obj_sum_name+'.input1D[2]',f=1)
+    createNode("multiplyDivide", n=obj_pyth_name)
+    setAttr(obj_pyth_name+".operation", 3)
+    connectAttr(obj_sum_name+".output1D",obj_pyth_name+'.input1X',f=1)
+    setAttr(obj_pyth_name+".input2X",0.5)
+    createNode("multiplyDivide", n=obj_scale_nameXYZ)
+    setAttr(obj_scale_nameXYZ+".operation", 2)
+    connectAttr(obj_pyth_name+".outputX", obj_scale_nameXYZ+".input1X", f=1)
+    setAttr(obj_scale_nameXYZ+".input2X",scale_dict['XYZ'])
+    connectAttr(obj_scale_nameXYZ+".outputX",arrowXYZ[0]+".scaleX",f=1)
+    connectAttr(obj_scale_nameXYZ+".outputX",arrowXYZ[0]+".scaleY",f=1)
+    connectAttr(obj_scale_nameXYZ+".outputX",arrowXYZ[0]+".scaleZ",f=1)
     #set dynamic color for XYZ arrow
-    connectAttr(obj_scale_nameZ+".outputX",dynLoc+'.translateX',f=1)
-    connectAttr(obj_scale_nameZ+".outputY",dynLoc+'.translateY',f=1)
-    connectAttr(obj_scale_nameZ+".outputZ",dynLoc+'.translateZ',f=1)
+    createNode("multiplyDivide", n=obj_square_name)
+    setAttr(obj_square_name+".operation", 3)
+    connectAttr(obj_scale_nameZ+".outputX",obj_square_name+'.input1X',f=1)
+    connectAttr(obj_scale_nameZ+".outputY",obj_square_name+'.input1Y',f=1)
+    connectAttr(obj_scale_nameZ+".outputZ",obj_square_name+'.input1Z',f=1)
+    setAttr(obj_square_name+".input2X",2)
+    setAttr(obj_square_name+".input2Y",2)
+    setAttr(obj_square_name+".input2Z",2)
+    createNode("multiplyDivide", n=obj_sqrt_name)
+    setAttr(obj_sqrt_name+".operation", 3)
+    connectAttr(obj_square_name+".outputX",obj_sqrt_name+'.input1X',f=1)
+    connectAttr(obj_square_name+".outputY",obj_sqrt_name+'.input1Y',f=1)
+    connectAttr(obj_square_name+".outputZ",obj_sqrt_name+'.input1Z',f=1)
+    setAttr(obj_sqrt_name+".input2X",0.5)
+    setAttr(obj_sqrt_name+".input2Y",0.5)
+    setAttr(obj_sqrt_name+".input2Z",0.5)
+    connectAttr(obj_sqrt_name+".outputX",dynLoc+'.translateX',f=1)
+    connectAttr(obj_sqrt_name+".outputY",dynLoc+'.translateY',f=1)
+    connectAttr(obj_sqrt_name+".outputZ",dynLoc+'.translateZ',f=1)
     connectAttr(dynLoc+'.translateX',XYZ_mat+'.colorR',f=1)
     connectAttr(dynLoc+'.translateY',XYZ_mat+'.colorG',f=1)
     connectAttr(dynLoc+'.translateZ',XYZ_mat+'.colorB',f=1)
@@ -383,15 +416,17 @@ def makeForceArrows(sp, ep_dict, scale_dict, obj_name, alpha=0.75):
 def assignColor(target, tint, alpha):
     if objExists(target):
         mat_name = tint+'_mat'
+        material_SG = mat_name+'SG'
         red_rgb = [0.800, 0.000, 0.000]
         yellow_rgb = [0.800, 0.500, 0.000]
         green_rgb = [0.000, 0.800, 0.000]
         blue_rgb = [0.000, 0.000, 0.800]
         white_rgb = [1.000, 1.000, 1.000]
         black_rgb = [0.000, 0.000, 0.000]
+        if not objExists(material_SG):
+            material_SG = sets(renderable=True, noSurfaceShader=True, empty=True, name=material_SG )
         if not objExists(mat_name):
             material = shadingNode("lambert", asShader=True, name=mat_name)
-            material_SG = sets(renderable=True, noSurfaceShader=True, empty=True, name=mat_name+'SG' )
             if tint == 'red':
                 material.color.set(red_rgb)
             elif tint == 'yellow':
@@ -411,7 +446,6 @@ def assignColor(target, tint, alpha):
         else:
             print("Muscle material already exists!")
             material = mat_name
-            material_SG = mat_name+'SG'
         sets(material_SG, edit=True, forceElement=target)
         return material
 
@@ -599,8 +633,54 @@ def keyForces(data, target, endFrame=None, mag=5):
     arrowXYZ = makeForceArrows(startLoc, {'XYZ':endLoc3D,'X':endLocX,'Y':endLocY,'Z':endLocZ}, {'XYZ':arrowScale,'X':XScale,'Y':YScale,'Z':ZScale}, 'GRF',alpha=0.75)
     parent(arrowXYZ, startLoc, r=True )
 
+## prompt for importing GRF forces and visualizing with arrows
+def keyForcesUI():
+    def handleImport(*args):
+        browse_path=fileDialog2(ff="*.csv", fm=1)
+        textField('data_field', edit=1, text=browse_path[0])
+    def handleSelect(*args):
+        selection = ls(sl=1)
+        textField('target_field', edit=1, text=selection[0])
+    def handleRun(*args):
+        callKeyForces(data_path, target, endFrame, mag)
+        deleteUI('force_window')
+    if window('force_window',exists=1) == True:
+        deleteUI('force_window')
+    mainWindow = window('force_window', title='Import Forces',rtf=1, w=150, h=150)
+    frameLayout(label='1) Select a csv to import. Columns must be in format [frame#, X, Y, Z].')
+    rowLayout(numberOfColumns=2, adjustableColumn=2)
+    button(label='Browse', command=handleImport)
+    data_path = textField('data_field', text='')
+    setParent('..')
+    frameLayout(label='2) Select a single object representing center of pressure location.')
+    rowLayout(numberOfColumns=2, adjustableColumn=2)
+    button(label='Select currently selected', command = handleSelect)
+    target = textField('target_field', text='')
+    setParent('..')
+    frameLayout(label='3) (optional) Enter frame # representing end of loading duration.')
+    columnLayout()
+    text(label='')
+    endFrame = textField('end_field', text='')
+    text(label='')
+    setParent('..')
+    frameLayout(label='4) (optional) Enter magnification factor for visualizing forces (defaults to 5).')
+    columnLayout()
+    text(label='')
+    mag = textField('mag_field', text='5')
+    text(label='')
+    setParent('..')
+    button(label='Import Forces', command=handleRun)
+    text(label='')
+    showWindow(mainWindow)
 
-
+def callKeyForces(data_path, target, end_field, mag_field, *args):
+    data_val = textField(data_path, q=1, tx=1)
+    target_val = textField(target, q=1, tx=1)
+    end_val = textField(end_field, q=1, tx=1)
+    mag_val = textField(mag_field, q=1, tx=1)
+    data = importForces(data_val)
+    end_int = int(end_val) if end_val else None
+    keyForces(data, target_val, end_int, int(mag_val))
 
 
 
