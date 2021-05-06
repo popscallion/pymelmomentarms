@@ -1,7 +1,9 @@
 from pymel.all import *
 import pymel.core.datatypes as dt
+import maya.mel as mel
 from functools import partial
 import csv
+import re
 
 ## does the thing, runs on UI button click
 def doTheThing(muscle_name, radios):
@@ -682,7 +684,42 @@ def callKeyForces(data_path, target, end_field, mag_field, *args):
     end_int = int(end_val) if end_val else None
     keyForces(data, target_val, end_int, int(mag_val))
 
+def getOtherData(target, frameRate=125):
+    # returns mean velocity, mean body height, mean IGL, mean inter-hand distance, girdle rotation.
+    # crop to time range
+    # select sternal jcs, wrist jcs, acromion acs
+    # key to new node
+    return
 
+def getPlaybackRange():
+    timeRange = [playbackOptions(minTime=1, q=1),playbackOptions(maxTime=1, q=1)]
+    return timeRange
+
+def bakeIKSim():
+    jointsSel = ls(type='joint')
+    timeRange = getPlaybackRange()
+    bakeResults(jointsSel, simulation=True, time=str(timeRange[0])+":"+str(timeRange[1]), sampleBy=1, oversamplingRate = 1 , disableImplicitControl =True, preserveOutsideKeys = True,  sparseAnimCurveBake = False, removeBakedAttributeFromLayer = False, removeBakedAnimFromLayer = False , bakeOnOverrideLayer =  False , minimizeRotation = True , controlPoints = False,  shape = True)
+
+def zeroForJCS():
+    currentTime(-1, update=1, edit=1)
+    jointsSel = ls(type='joint')
+    ikHandleSel = ls(type='ikHandle')
+    ikEffectorSel = ls(type='ikEffector')
+    ikSel = ikHandleSel + ikEffectorSel
+    coracoid_j =filter(lambda v: re.search('coracoid_j_roto',str(v)), jointsSel)[0]
+    setAttr(coracoid_j+'.translateX', 0)
+    select(ikSel, r=1)
+    mel.eval('doEnableNodeItems false all') #disable ik solvers, constraints, and expressions that might prevent joints from being zeroed
+    for selectedJoint in jointsSel:
+        for axis in ['X','Y','Z']:
+            attrName = selectedJoint+'.rotate'+axis
+            isReferenced = referenceQuery( attrName, isNodeReferenced=True )
+            settable = getAttr(attrName, settable=1, silent=1)
+            if settable:
+                setAttr(attrName, 0)
+            elif not isReferenced:
+                setAttr(attrName, 0, lock=0)
+        setKeyframe(selectedJoint)
 
 
 ## get muscle name from user input
