@@ -665,10 +665,10 @@ def keyForcesUI():
     endFrame = textField('end_field', text='')
     text(label='')
     setParent('..')
-    frameLayout(label='4) (optional) Enter magnification factor for visualizing forces (defaults to 5).')
+    frameLayout(label='4) (optional) Enter magnification factor for visualizing forces (defaults to 20).')
     columnLayout()
     text(label='')
-    mag = textField('mag_field', text='5')
+    mag = textField('mag_field', text='20')
     text(label='')
     setParent('..')
     button(label='Import Forces', command=handleRun)
@@ -684,8 +684,88 @@ def callKeyForces(data_path, target, end_field, mag_field, *args):
     end_int = int(end_val) if end_val else None
     keyForces(data, target_val, end_int, int(mag_val))
 
+def momentAnalysisUI():
+    def handleBake(*args):
+        bakeIKSim()
+        saveBakedCopy()
+    def handleTegu(*args):
+        scriptedJCS(teguDict)
+    def handlePossum(*args):
+        scriptedJCS(possumDict)
+    teguDict = [
+        {'axes': 'IKscap:jcs_acromion',  'dist': 'IKscap:acromion_j',  'prox': 'IKscap:interclavicle_j_roto'},
+        {'axes': 'IKscap:jcs_glenohumeral',  'dist': 'IKscap:glenohumeral_j_roto',  'prox': 'IKscap:acromion_j'},
+        {'axes': 'IKscap:jcs_elbow',  'dist': 'IKscap:elbow_j', 'prox': 'IKscap:glenohumeral_j_roto'},
+        {'axes': 'IKscap:jcs_wrist',  'dist': 'IKscap:wrist_j', 'prox': 'IKscap:elbow_j'}
+    ]
+    possumDict = [
+        {'axes': 'IKscap:jcs_acromion',  'dist': 'IKscap:acromion_j',  'prox': 'IKscap:interclavicle_j_roto'},
+        {'axes': 'IKscap:jcs_glenohumeral',  'dist': 'IKscap:glenohumeral_j_roto',  'prox': 'IKscap:acromion_j'},
+        {'axes': 'IKscap:jcs_elbow',  'dist': 'IKscap:elbow_j', 'prox': 'IKscap:glenohumeral_j_roto'},
+        {'axes': 'IKscap:jcs_wrist',  'dist': 'IKscap:wrist_j', 'prox': 'IKscap:elbow_j'}
+    ]
+    mainWindow = window('moment_window', title='Import Forces',rtf=1, w=150, h=150)
+    frameLayout(label='1) Key center of pressure location through all frames of interest.')
+    setParent('..')
+    frameLayout(label='2) Import ground reaction forces from .csv.')
+    button(label='Import GRF', command=lambda *args: keyForcesUI())
+    setParent('..')
+    frameLayout(label='3) Bake keys from IK simulation and save as a separate file (suffix "_baked").')
+    button(label='Bake and Save', command=handleBake)
+    setParent('..')
+    frameLayout(label='4) Key zero pose at frame -1 and (optional) clear existing JCS data')
+    rowLayout(numberOfColumns=2)
+    button(label='Zero joints', command=zeroForJCS)
+    button(label='Clear JCS', command=clearKeyedJCS)
+    setParent('..')
+    frameLayout(label='5) Set joint coordinate systems (make sure XROMM shelf tools are installed)')
+    rowLayout(numberOfColumns=2)
+    button(label='Tegu JCS', command=handleTegu)
+    button(label='Opossum JCS', command=handlePossum)
+    setParent('..')
+    frameLayout(label='6) Calculate elbow and shoulder moments')
+    columnLayout()
+    button(label='Tegu JCS', command=handleTegu)
+    button(label='Opossum JCS', command=handlePossum)
+    setParent('..')
+    frameLayout(label='7) Export data')
+    columnLayout()
+    button(label='Export', command=handleTegu)
+    setParent('..')
+    showWindow(mainWindow)
+
 def getOtherData(target, frameRate=125):
+    originTransform = 'IKscap:SEP73_roto'
+    wristJoint = 'IKscap:wrist_j'
+    shoulderJoint = 'IKscap:glenohumeral_j_roto'
+    sternalJoint = 'IKscap:interclavicle_j_roto'
+    spineStartJoint = 'IKscap:skull_j'
+    spineEndJoint = 'IKscap:spine_j'
+    # make body reference frame in foreceplate reference frame
+    spineLoc = spaceLocator(name="spineLoc")
+    wholeAnimalLoc = spaceLocator(name="animal")
+    parent(spineLoc, wholeAnimalLoc, originTransform)
+    originUp = getAttr(originTransform+'.worldMatrix')*dt.Vector(0,1,0)
+    pointConstraint(spineEndJoint, spineLoc)
+    pointConstraint(sternalJoint, wholeAnimalLoc)
+    aimConstraint(spineStartJoint, spineLoc, upVector=originUp)
+    orientConstraint(spineLoc,wholeAnimalLoc)
+    # get shoulder height in forceplate reference frame
+    shoulderMultMatrix = createNode("multMatrix", name="shoulderMultMatrix_dummyNode")
+    shoulderDecomposeMatrix = createNode("decomposeMatrix", name="shoulderDecomposeMatrix_dummyNode")
+    connectAttr(shoulderJoint+'.worldMatrix[0]',  shoulderMultMatrix+'.matrixIn[0]')
+    connectAttr(originTransform+'.worldInverseMatrix[0]',  shoulderMultMatrix+'.matrixIn[1]')
+    connectAttr(shoulderMultMatrix+'.matrixSum',  shoulderDecomposeMatrix+'.inputMatrix')
+    # translateZ of shoulderDecompose is shoulder height
+
+    #get shoulder width: subtract shoulder position from body position, get vector in body reference frame
+
+    #get hand width: subtract wrist position from body position, get vector in body reference frame
+
+    #get spine bending: difference between body orientation and ic orientation
+
     # returns mean velocity, mean body height, mean IGL, mean inter-hand distance, girdle rotation.
+    # create locators with .5 IGL, hand width, girdle rotation
     # crop to time range
     # select sternal jcs, wrist jcs, acromion acs
     # key to new node
@@ -695,13 +775,30 @@ def getPlaybackRange():
     timeRange = [playbackOptions(minTime=1, q=1),playbackOptions(maxTime=1, q=1)]
     return timeRange
 
+def saveBakedCopy():
+    path = cmds.file(q=True, exn=True)
+    dirName, oldFullName = os.path.split(path)
+    oldName, extension = os.path.splitext(oldFullName)
+    newName = oldName + '_baked' + extension
+    newPath = os.path.join(dirName, newName)
+    cmds.file(rename=newPath)
+    cmds.file( save=True, force=True, type='mayaBinary' )
+
 def bakeIKSim():
     jointsSel = ls(type='joint')
     timeRange = getPlaybackRange()
     bakeResults(jointsSel, simulation=True, time=str(timeRange[0])+":"+str(timeRange[1]), sampleBy=1, oversamplingRate = 1 , disableImplicitControl =True, preserveOutsideKeys = True,  sparseAnimCurveBake = False, removeBakedAttributeFromLayer = False, removeBakedAnimFromLayer = False , bakeOnOverrideLayer =  False , minimizeRotation = True , controlPoints = False,  shape = True)
 
-def zeroForJCS():
-    currentTime(-1, update=1, edit=1)
+def clearKeyedJCS():
+    sure = confirmDialog( title='Confirm', message='Clear all JCS data? This will delete all "Prox" axis objects and JCS data nodes.', button=['Yes','No'], defaultButton='Yes', cancelButton='No', dismissString='No' )
+    if sure == "Yes":
+        proxSel = ls('*:*jcs*Prox*')
+        dataSel = ls('*:*jcs*data*')
+        delete(proxSel+dataSel)
+
+def zeroForJCS(dummyFrame=-1):
+    mel.eval('doEnableNodeItems true all')
+    currentTime(dummyFrame, update=1, edit=1)
     jointsSel = ls(type='joint')
     ikHandleSel = ls(type='ikHandle')
     ikEffectorSel = ls(type='ikEffector')
@@ -720,6 +817,20 @@ def zeroForJCS():
             elif not isReferenced:
                 setAttr(attrName, 0, lock=0)
         setKeyframe(selectedJoint)
+
+def scriptedJCS(listOfDicts, dummyFrame=-1):
+    #paste in desired jcs as list of dicts, e.g. {'prox':'proxjoint', 'dist':'distjoint', 'axes':'axes'}
+    mel.eval('doEnableNodeItems false all')
+    for dict in listOfDicts:
+        currentTime(dummyFrame, update=1, edit=1)
+        mel.eval('jointAxesDual')
+        textFieldButtonGrp('proxFieldGroup', e=1, text = dict['prox'])
+        textFieldButtonGrp('distFieldGroup', e=1, text = dict['dist'])
+        textFieldButtonGrp('axesFieldGroup', e=1, text = dict['axes'])
+        # button('setAxesBButton', e=1, enable=1)
+        mel.eval('setAxesB')
+    deleteUI('jointAxesWindow')
+    mel.eval('doEnableNodeItems true all')
 
 
 ## get muscle name from user input
