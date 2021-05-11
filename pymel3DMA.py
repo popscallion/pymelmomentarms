@@ -600,7 +600,7 @@ def quickExport(path, species):
     torqueList = ['XaxisMomentArm','YaxisMomentArm','ZaxisMomentArm','XaxisTorque','YaxisTorque','ZaxisTorque']
     nodes = OrderedDict([
         ("tegu", OrderedDict([
-            ('animal','animal'),
+            ('animal','dvec_animal'),
             ('acromion','IKscap:jcs_acromiondata'),
             ('glenoid','IKscap:jcs_glenohumeraldata'),
             ('elbow','IKscap:jcs_elbowdata'),
@@ -609,7 +609,7 @@ def quickExport(path, species):
             ('elbowTorque','elbow_ZYX_jnt'),
         ])),
         ("opossum", OrderedDict([
-            ('animal','animal'),
+            ('animal','dvec_animal'),
             ('acromion','IKscap:jcs_acromiondata'),
             ('glenoid','IKscap:jcs_glenohumeraldata'),
             ('elbow','IKscap:jcs_elbowdata'),
@@ -896,6 +896,9 @@ def momentAnalysisUI():
     def handleNodes(*args):
         speciesSel = radioCollection(radios, q=1, sl=1)
         getOtherDataUI(speciesSel)
+    def handleDelete(*args):
+        vecs = ls('*vec_*')
+        delete(vecs)
     def handleMoments(*args):
         speciesSel = radioCollection(radios, q=1, sl=1)
         quickMoments(speciesSel)
@@ -947,7 +950,10 @@ def momentAnalysisUI():
     button(label='Set JCS', command=handleJCS)
     setParent('..')
     frameLayout(label='6) Create nodes to measure spine bending, shoulder height, and shoulder, elbow, and wrist width.')
+    rowLayout(numberOfColumns=3)
     button(label='Create Nodes', command=handleNodes)
+    text(label='')
+    button(label='Delete Created Nodes', command=handleDelete)
     setParent('..')
     frameLayout(label='7) Calculate elbow and shoulder moments')
     button(label='Calculate moments', command=handleMoments)
@@ -1092,9 +1098,9 @@ def useReferenceFrame(object, targetFrame, mode, objectName=None, targetFrameNam
 
 def getOtherData(originTransform, spineStartJoint, spineEndJoint, sternalJoint, shoulderJoint, elbowJoint, wristJoint, GRF_start, GRF_end):
     # make body reference frame in foreceplate reference frame
-    spineLoc = spaceLocator(name="spineLoc")
-    sternalLoc = spaceLocator(name="sternalLoc")
-    wholeAnimalLoc = spaceLocator(name="animal")
+    spineLoc = spaceLocator(name="dvec_spineLoc")
+    sternalLoc = spaceLocator(name="dvec_sternalLoc")
+    wholeAnimalLoc = spaceLocator(name="dvec_animal")
     parent(spineLoc, sternalLoc, wholeAnimalLoc, originTransform)
     originUp = getAttr(originTransform+'.worldMatrix')*dt.Vector(0,1,0)
     pointConstraint(spineEndJoint, spineLoc)
@@ -1145,6 +1151,7 @@ def getOtherData(originTransform, spineStartJoint, spineEndJoint, sternalJoint, 
     connectAttr(grfVecInAnimal+'.output',  wholeAnimalLoc+'.localGRF')
     return wholeAnimalLoc
 
+
 def getPlaybackRange():
     timeRange = [playbackOptions(minTime=1, q=1),playbackOptions(maxTime=1, q=1)]
     return timeRange
@@ -1157,11 +1164,13 @@ def saveBakedCopy():
     newPath = os.path.join(dirName, newName)
     cmds.file(rename=newPath)
     cmds.file( save=True, force=True, type='mayaBinary' )
+    return
 
 def bakeIKSim():
     jointsSel = ls(type='joint')
     timeRange = getPlaybackRange()
     bakeResults(jointsSel, simulation=True, time=str(timeRange[0])+":"+str(timeRange[1]), sampleBy=1, oversamplingRate = 1 , disableImplicitControl =True, preserveOutsideKeys = True,  sparseAnimCurveBake = False, removeBakedAttributeFromLayer = False, removeBakedAnimFromLayer = False , bakeOnOverrideLayer =  False , minimizeRotation = True , controlPoints = False,  shape = True)
+    return
 
 def clearKeyedJCS():
     sure = confirmDialog( title='Confirm', message='Clear all JCS data? This will delete all "Prox" axis objects and JCS data nodes.', button=['Yes','No'], defaultButton='Yes', cancelButton='No', dismissString='No' )
@@ -1169,6 +1178,7 @@ def clearKeyedJCS():
         proxSel = ls('*:*jcs*Prox*')
         dataSel = ls('*:*jcs*data*')
         delete(proxSel+dataSel)
+    return
 
 def zeroForJCS(dummyFrame=-1):
     mel.eval('doEnableNodeItems true all')
