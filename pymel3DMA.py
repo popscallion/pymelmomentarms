@@ -2,6 +2,7 @@ from pymel.all import *
 import pymel.core.datatypes as dt
 import maya.mel as mel
 from functools import partial
+from collections import OrderedDict
 import csv
 import re
 
@@ -49,7 +50,7 @@ def updateUnitVecs(proxy):
     return unit_vecs
 
 ## every frame: get and key moment arms
-def calculateMomentArms(sel, proxy, mus_vec, unit_vecs, frame):
+def calculateMomentArms(sel, proxy, mus_vec, unit_vecs, frame, get_moments):
     ## calculate moment arm as shortest distance between two skew lines
     unscaled_moment_arms = {}
     for axis in ['x','y','z']:
@@ -80,16 +81,20 @@ def calculateMomentArms(sel, proxy, mus_vec, unit_vecs, frame):
     for axis in ['x','y','z']:
         setAttr(proxy['joint']+'.'+axis.upper()+'ma', scaled_moment_arms[axis])
         setKeyframe(proxy['joint'], at=axis.upper()+'ma')
+        if get_moments:
+            moment = scaled_moment_arms[axis] * mus_vec.length()
+            setAttr(proxy['joint']+'.tq'+axis.upper(), moment)
+            setKeyframe(proxy['joint'], at='tq'+axis.upper())
     print('X moment arm for frame '+str(int(frame))+' is: '+str(scaled_moment_arms['x']))
     print('Y moment arm for frame '+str(int(frame))+' is: '+str(scaled_moment_arms['y']))
     print('Z moment arm for frame '+str(int(frame))+' is: '+str(scaled_moment_arms['z']))
     return scaled_moment_arms
 
 ## frame updater, inspiration from David Baier's outputRelMotion shelf tool
-def updateFrame(sel, proxy, order):
+def updateFrame(sel, proxy, order, frame_range=None, get_moments = False):
     transformList = ls(tr=1)
-    frame=findKeyframe(transformList, hi="both",which="first")
-    lastframe=findKeyframe(transformList, hi="both",which="last")
+    frame = frame_range[0] if frame_range else findKeyframe(transformList, hi="both",which="first")
+    lastframe= frame_range[1] if frame_range else findKeyframe(transformList, hi="both",which="last")
     assert(frame-lastframe != 0), "No animation found!"
     previousframe = lastframe+1
     currentTime(frame, update=1, edit=1)
@@ -104,7 +109,7 @@ def updateFrame(sel, proxy, order):
         mus_vec = makeVector(sel['C'],sel['B'])
         updateProxy(sel, proxy, order)
         unit_vecs = updateUnitVecs(proxy)
-        calculateMomentArms(sel, proxy, mus_vec, unit_vecs, frame)
+        calculateMomentArms(sel, proxy, mus_vec, unit_vecs, frame, get_moments)
         progressWindow(edit=1, progress=frame, status=('Processing frame: '+str(frame)))
         currentTime(frame, update=1, edit=1)
     progressWindow(endProgress=1)
@@ -112,8 +117,8 @@ def updateFrame(sel, proxy, order):
 ## calculates a worldspace offset matrix to capture transformations between distal and proximal joint coordinate systems
 def findOffsetMatrix(order, obj1, obj2):
     inverse_order = order[::-1]
-    obj2_mat = obj2.attr('worldMatrix').get()
-    obj1_imat = obj1.attr('worldMatrix').get().inverse()
+    obj2_mat = getAttr(obj2+'.worldMatrix')
+    obj1_imat = getAttr(obj1+'.worldInverseMatrix')
     offset_o1o2 = dt.Matrix(obj2_mat*obj1_imat)
     offset_o1o2_Euler = degrees(dt.EulerRotation.decompose(offset_o1o2,inverse_order))
     output = {  'mat':offset_o1o2,
@@ -126,8 +131,9 @@ def findOffsetMatrix(order, obj1, obj2):
     # print('new offset found, rX='+str(output['rX']))
     return output
 
+
 ## makes unit vector proxy for composite joint coordinate system
-def makeUnitAxes(name, sel, united=0):
+def makeUnitAxes(name, sel, united=0, include_moments=False):
     def axesShaderMake():
         if not objExists('xShader'):
             shadingNode('blinn', asShader=True, name='xShader')
@@ -204,6 +210,10 @@ def makeUnitAxes(name, sel, united=0):
     addAttr(proxy['joint'], shortName='Xma', longName='XaxisMomentArm', at="float" , keyable=1)
     addAttr(proxy['joint'], shortName='Yma', longName='YaxisMomentArm', at="float" , keyable=1)
     addAttr(proxy['joint'], shortName='Zma', longName='ZaxisMomentArm', at="float" , keyable=1)
+    if include_moments:
+        addAttr(proxy['joint'], shortName='tqX', longName='XaxisTorque', at="float" , keyable=1)
+        addAttr(proxy['joint'], shortName='tqY', longName='YaxisTorque', at="float" , keyable=1)
+        addAttr(proxy['joint'], shortName='tqZ', longName='ZaxisTorque', at="float" , keyable=1)
     pointConstraint(sel['A*'], proxy['joint'])
     orientConstraint(sel['A'], proxy['joint'])
     return proxy
@@ -584,6 +594,69 @@ def hideByHiddenUI():
     text(label='')
     showWindow(mainWindow)
 
+
+def quickExport(path, species):
+    xformList = ['translateX','translateY','translateZ','rotateX','rotateY','rotateZ']
+    torqueList = ['XaxisMomentArm','YaxisMomentArm','ZaxisMomentArm','XaxisTorque','YaxisTorque','ZaxisTorque']
+    nodes = OrderedDict([
+        ("tegu", OrderedDict([
+            ('animal','animal'),
+            ('acromion','IKscap:jcs_acromiondata'),
+            ('glenoid','IKscap:jcs_glenohumeraldata'),
+            ('elbow','IKscap:jcs_elbowdata'),
+            ('wrist','IKscap:jcs_wristdata'),
+            ('glenoidTorque','shoulder_ZYX_jnt'),
+            ('elbowTorque','elbow_ZYX_jnt'),
+        ])),
+        ("opossum", OrderedDict([
+            ('animal','animal'),
+            ('acromion','IKscap:jcs_acromiondata'),
+            ('glenoid','IKscap:jcs_glenohumeraldata'),
+            ('elbow','IKscap:jcs_elbowdata'),
+            ('wrist','IKscap:jcs_wristdata'),
+            ('glenoidTorque','shoulder_ZYX_jnt'),
+            ('elbowTorque','elbow_ZYX_jnt'),
+        ])),
+    ])
+    vars = OrderedDict([
+        ('animal', xformList + ['shoulderHeight','shoulderWidth','elbowWidth','wristWidth','spineBend']),
+        ('acromion', xformList),
+        ('glenoid', xformList),
+        ('elbow', xformList),
+        ('wrist', xformList),
+        ('glenoidTorque', torqueList),
+        ('elbowTorque', torqueList),
+    ])
+    frame_range = getPlaybackRange()
+    headerList = [var+'.'+attr for var in vars for attr in vars[var]]
+    attrDict = {var+'.'+attr : nodes[species][var]+'.'+attr for var in vars for attr in vars[var]}
+    with open(path, 'w') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=["frame"]+headerList)
+        writer.writeheader()
+        frame = frame_range[0]
+        lastframe= frame_range[1]
+        assert(frame-lastframe != 0), "No animation found!"
+        previousframe = lastframe+1
+        currentTime(frame, update=1, edit=1)
+        progressWindow(title="Exporting data...", min=frame, max=lastframe, progress=frame, status = "Parsing frame: "+str(frame), isInterruptable=True)
+        while frame<=lastframe:
+            if progressWindow(q=1, isCancelled=1):
+                break
+            if (frame-previousframe) == 0:
+                break
+            previousframe = frame
+            dataRow = dict.fromkeys(headerList)
+            dataRow['frame'] = int(frame)
+            for key in headerList:
+                dataRow[key] = getAttr(attrDict[key], sl=1)
+            writer.writerow(dataRow)
+            progressWindow(edit=1, progress=frame, status=('Processing frame: '+str(frame)))
+            frame += 1
+            currentTime(frame, update=1, edit=1)
+
+        progressWindow(endProgress=1)
+    return
+
 ## imports XYZ forces from csv
 def importForces(path):
     data = {}
@@ -635,6 +708,112 @@ def keyForces(data, target, endFrame=None, mag=5):
     arrowXYZ = makeForceArrows(startLoc, {'XYZ':endLoc3D,'X':endLocX,'Y':endLocY,'Z':endLocZ}, {'XYZ':arrowScale,'X':XScale,'Y':YScale,'Z':ZScale}, 'GRF',alpha=0.75)
     parent(arrowXYZ, startLoc, r=True )
 
+def callGetOtherData(origin_field, spineStart_field, spineEnd_field, sternum_field, glenohumeral_field, elbow_field, wrist_field, *args):
+    origin = textField(origin_field, q=1, tx=1)
+    spineStart = textField(spineStart_field, q=1, tx=1)
+    spineEnd = textField(spineEnd_field, q=1, tx=1)
+    sternum = textField(sternum_field, q=1, tx=1)
+    glenohumeral = textField(glenohumeral_field, q=1, tx=1)
+    elbow = textField(elbow_field, q=1, tx=1)
+    wrist = textField(wrist_field, q=1, tx=1)
+    getOtherData(origin, spineStart, spineEnd, sternum, glenohumeral, elbow, wrist)
+
+def getOtherDataUI(speciesSel):
+    def handleTegu(*args):
+        textField('origin_field', edit=1, text='IKscap:SEP73_roto')
+        textField('start_field', edit=1, text='IKscap:skull_j')
+        textField('end_field', edit=1, text='IKscap:spine_j')
+        textField('sternum_field', edit=1, text='IKscap:interclavicle_j_roto')
+        textField('glenohumeral_field', edit=1, text='IKscap:glenohumeral_j_roto')
+        textField('elbow_field', edit=1, text='IKscap:elbow_j')
+        textField('wrist_field', edit=1, text='IKscap:wrist_j')
+    def handleOpossum(*args):
+        textField('origin_field', edit=1, text='IKscap:SEP87_roto')
+        textField('start_field', edit=1, text='IKscap:skull_j_roto')
+        textField('end_field', edit=1, text='IKscap:spine_j_roto')
+        textField('sternum_field', edit=1, text='IKscap:manubrium_j_roto')
+        textField('glenohumeral_field', edit=1, text='IKscap:glenoid_j_roto')
+        textField('elbow_field', edit=1, text='IKscap:elbow_j')
+        textField('wrist_field', edit=1, text='IKscap:wrist_j')
+    def handleOrigin(*args):
+        selection = ls(sl=1)
+        textField('origin_field', edit=1, text=selection[0])
+    def handleStart(*args):
+        selection = ls(sl=1)
+        textField('start_field', edit=1, text=selection[0])
+    def handleEnd(*args):
+        selection = ls(sl=1)
+        textField('end_field', edit=1, text=selection[0])
+    def handleSternum(*args):
+        selection = ls(sl=1)
+        textField('sternum_field', edit=1, text=selection[0])
+    def handleGlenohumeral(*args):
+        selection = ls(sl=1)
+        textField('glenohumeral_field', edit=1, text=selection[0])
+    def handleElbow(*args):
+        selection = ls(sl=1)
+        textField('elbow_field', edit=1, text=selection[0])
+    def handleWrist(*args):
+        selection = ls(sl=1)
+        textField('wrist_field', edit=1, text=selection[0])
+    def handleRun(*args):
+        callGetOtherData(origin, spineStart, spineEnd, sternum, glenohumeral, elbow, wrist)
+        deleteUI('other_window')
+    if window('other_window',exists=1) == True:
+        deleteUI('other_window')
+    mainWindow = window('other_window', title='Get Other Data',rtf=1, w=150, h=150)
+    frameLayout(label='A) Choose a preset:')
+    rowLayout(numberOfColumns=2)
+    button(label='Tegu', command=handleTegu)
+    button(label='Opossum', command=handleOpossum)
+    setParent('..')
+    frameLayout(label='B) OR select joints manually:')
+    columnLayout()
+    text(label='Forceplate origin')
+    rowLayout(numberOfColumns=2, adjustableColumn=1)
+    origin = textField('origin_field', text='')
+    button(label='Select currently selected', command = handleOrigin)
+    setParent('..')
+    text(label='Spine start, or base of skull')
+    rowLayout(numberOfColumns=2, adjustableColumn=1)
+    spineStart = textField('start_field', text='')
+    button(label='Select currently selected', command = handleStart)
+    setParent('..')
+    text(label='Spine end')
+    rowLayout(numberOfColumns=2, adjustableColumn=1)
+    spineEnd = textField('end_field', text='')
+    button(label='Select currently selected', command = handleEnd)
+    setParent('..')
+    text(label='Sternum/interclavicle')
+    rowLayout(numberOfColumns=2, adjustableColumn=1)
+    sternum = textField('sternum_field', text='')
+    button(label='Select currently selected', command = handleSternum)
+    setParent('..')
+    text(label='Glenohumeral')
+    rowLayout(numberOfColumns=2, adjustableColumn=1)
+    glenohumeral = textField('glenohumeral_field', text='')
+    button(label='Select currently selected', command = handleGlenohumeral)
+    setParent('..')
+    text(label='Elbow')
+    rowLayout(numberOfColumns=2, adjustableColumn=1)
+    elbow = textField('elbow_field', text='')
+    button(label='Select currently selected', command = handleElbow)
+    setParent('..')
+    text(label='Wrist')
+    rowLayout(numberOfColumns=2, adjustableColumn=1)
+    wrist = textField('wrist_field', text='')
+    button(label='Select currently selected', command = handleWrist)
+    setParent('..')
+    text(label='')
+    button(label='Make Nodes', command=handleRun)
+    text(label='')
+    showWindow(mainWindow)
+    if speciesSel == "tegu":
+        handleTegu()
+    elif speciesSel == "opossum":
+        handleOpossum()
+
+
 ## prompt for importing GRF forces and visualizing with arrows
 def keyForcesUI():
     def handleImport(*args):
@@ -650,14 +829,14 @@ def keyForcesUI():
         deleteUI('force_window')
     mainWindow = window('force_window', title='Import Forces',rtf=1, w=150, h=150)
     frameLayout(label='1) Select a csv to import. Columns must be in format [frame#, X, Y, Z].')
-    rowLayout(numberOfColumns=2, adjustableColumn=2)
-    button(label='Browse', command=handleImport)
+    rowLayout(numberOfColumns=2, adjustableColumn=1)
     data_path = textField('data_field', text='')
+    button(label='Browse', command=handleImport)
     setParent('..')
     frameLayout(label='2) Select a single object representing center of pressure location.')
-    rowLayout(numberOfColumns=2, adjustableColumn=2)
-    button(label='Select currently selected', command = handleSelect)
+    rowLayout(numberOfColumns=2, adjustableColumn=1)
     target = textField('target_field', text='')
+    button(label='Select currently selected', command = handleSelect)
     setParent('..')
     frameLayout(label='3) (optional) Enter frame # representing end of loading duration.')
     columnLayout()
@@ -688,10 +867,22 @@ def momentAnalysisUI():
     def handleBake(*args):
         bakeIKSim()
         saveBakedCopy()
-    def handleTegu(*args):
-        scriptedJCS(teguDict)
-    def handlePossum(*args):
-        scriptedJCS(possumDict)
+    def handleJCS(*args):
+        speciesSel = radioCollection(radios, q=1, sl=1)
+        dictSel = teguDict if speciesSel == "tegu" else possumDict
+        scriptedJCS(dictSel)
+    def handleNodes(*args):
+        speciesSel = radioCollection(radios, q=1, sl=1)
+        getOtherDataUI(speciesSel)
+    def handleMoments(*args):
+        speciesSel = radioCollection(radios, q=1, sl=1)
+        quickMoments(speciesSel)
+    def handleBrowse(*args):
+        browse_path=fileDialog2(cap="Save as", dir=workspace(dir=1, q=1), fm=0, ff="CSV files (*.csv)", ds=1)
+        textField('destination_field', edit=1, text=browse_path[0])
+    def handleExport(*args):
+        speciesSel = radioCollection(radios, q=1, sl=1)
+        quickExport(textField(destination, q=1, tx=1),speciesSel)
     teguDict = [
         {'axes': 'IKscap:jcs_acromion',  'dist': 'IKscap:acromion_j',  'prox': 'IKscap:interclavicle_j_roto'},
         {'axes': 'IKscap:jcs_glenohumeral',  'dist': 'IKscap:glenohumeral_j_roto',  'prox': 'IKscap:acromion_j'},
@@ -699,12 +890,22 @@ def momentAnalysisUI():
         {'axes': 'IKscap:jcs_wrist',  'dist': 'IKscap:wrist_j', 'prox': 'IKscap:elbow_j'}
     ]
     possumDict = [
-        {'axes': 'IKscap:jcs_acromion',  'dist': 'IKscap:acromion_j',  'prox': 'IKscap:interclavicle_j_roto'},
-        {'axes': 'IKscap:jcs_glenohumeral',  'dist': 'IKscap:glenohumeral_j_roto',  'prox': 'IKscap:acromion_j'},
-        {'axes': 'IKscap:jcs_elbow',  'dist': 'IKscap:elbow_j', 'prox': 'IKscap:glenohumeral_j_roto'},
+        {'axes': 'IKscap:jcs_acromion',  'dist': 'IKscap:acromion_roto',  'prox': 'IKscap:manubrium_j_roto'},
+        {'axes': 'IKscap:jcs_glenohumeral',  'dist': 'IKscap:glenoid_j',  'prox': 'IKscap:acromion_roto'},
+        {'axes': 'IKscap:jcs_elbow',  'dist': 'IKscap:elbow_j', 'prox': 'IKscap:glenoid_j'},
         {'axes': 'IKscap:jcs_wrist',  'dist': 'IKscap:wrist_j', 'prox': 'IKscap:elbow_j'}
     ]
+    wd, basename = os.path.split(os.path.splitext(cmds.file(q=1, sn=1, exn=1))[0])
+    defaultname = os.path.join(wd, basename+'_data.csv')
+    if window('moment_window',exists=1) == True:
+        deleteUI('moment_window')
     mainWindow = window('moment_window', title='Import Forces',rtf=1, w=150, h=150)
+    frameLayout(label='0) Select species.')
+    rowColumnLayout(numberOfColumns=2)
+    radios = radioCollection('speciesRadios')
+    radioButton('tegu', label='Tegu', sl=True)
+    radioButton('opossum', label='Opossum')
+    setParent('..')
     frameLayout(label='1) Key center of pressure location through all frames of interest.')
     setParent('..')
     frameLayout(label='2) Import ground reaction forces from .csv.')
@@ -718,58 +919,200 @@ def momentAnalysisUI():
     button(label='Zero joints', command=zeroForJCS)
     button(label='Clear JCS', command=clearKeyedJCS)
     setParent('..')
-    frameLayout(label='5) Set joint coordinate systems (make sure XROMM shelf tools are installed)')
+    frameLayout(label='5) Set joint coordinate systems for selected species (make sure XROMM shelf tools are installed)')
     rowLayout(numberOfColumns=2)
-    button(label='Tegu JCS', command=handleTegu)
-    button(label='Opossum JCS', command=handlePossum)
+    button(label='Set JCS', command=handleJCS)
     setParent('..')
-    frameLayout(label='6) Calculate elbow and shoulder moments')
-    columnLayout()
-    button(label='Tegu JCS', command=handleTegu)
-    button(label='Opossum JCS', command=handlePossum)
+    frameLayout(label='6) Create nodes to measure spine bending, shoulder height, and shoulder, elbow, and wrist width.')
+    button(label='Create Nodes', command=handleNodes)
     setParent('..')
-    frameLayout(label='7) Export data')
-    columnLayout()
-    button(label='Export', command=handleTegu)
+    frameLayout(label='7) Calculate elbow and shoulder moments')
+    rowLayout(numberOfColumns=2)
+    button(label='Calculate moments', command=handleMoments)
+    setParent('..')
+    frameLayout(label='8) Export data')
+    rowLayout(numberOfColumns=3, adjustableColumn=1)
+    destination = textField('destination_field', text=defaultname)
+    button(label='Browse', command=handleBrowse)
+    button(label='Export', command=handleExport)
     setParent('..')
     showWindow(mainWindow)
 
-def getOtherData(target, frameRate=125):
-    originTransform = 'IKscap:SEP73_roto'
-    wristJoint = 'IKscap:wrist_j'
-    shoulderJoint = 'IKscap:glenohumeral_j_roto'
-    sternalJoint = 'IKscap:interclavicle_j_roto'
-    spineStartJoint = 'IKscap:skull_j'
-    spineEndJoint = 'IKscap:spine_j'
+def quickMoments(species):
+    lookup =    {   'tegu': {
+                        'shoulder':{'A':'IKscap:jcs_glenohumeralProx', 'A*':'IKscap:jcs_glenohumeral', 'B':'GRF_data','C': 'GRF_start'},
+                        'elbow':{'A':'IKscap:jcs_elbowProx', 'A*':'IKscap:jcs_elbow', 'B':'GRF_data', 'C':'GRF_start' },
+                    },
+                    'opossum':  {
+                        'shoulder':{'A':'IKscap:jcs_glenohumeralProx', 'A*':'IKscap:jcs_glenohumeral', 'B':'GRF_data','C': 'GRF_start'},
+                        'elbow':{'A':'IKscap:jcs_elbowProx', 'A*':'IKscap:jcs_elbow', 'B':'GRF_data', 'C':'GRF_start' },
+                    }}
+    rotation_order = "ZYX"
+    frame_range = getPlaybackRange()
+    for joint in ["shoulder", "elbow"]:
+        sel = lookup[species][joint]
+        proxy = makeUnitAxes(joint+'_'+rotation_order, sel, united=0, include_moments=True)
+        updateFrame(sel, proxy, rotation_order, frame_range, get_moments=True)
+
+def makeOffsetMatrix(objectA, objectB, nameA=None, nameB=None):
+    nameA = nameA if nameA else objectA
+    nameB= nameB if nameB else objectB
+    diffName = "diffvec_"+nameB+"_FROM_"+nameA
+    if objExists(diffName):
+        diff = diffName
+    else:
+        diff = createNode("multMatrix", name=diffName)
+        connectAttr(objectB+'.worldMatrix', diff+'.matrixIn[0]', force=True)
+        connectAttr(objectA+'.worldInverseMatrix', diff+'.matrixIn[1]', force=True)
+    return(diff)
+
+def makeDecomposeMatrix(matrix, name=None):
+    name = name if name else matrix
+    decompName = "xformvec_"+matrix.split("_",1)[-1]
+    if objExists(decompName):
+        decomp = decompName
+    else:
+        decomp = createNode("decomposeMatrix", name=decompName)
+        connectAttr(matrix+'.matrixSum', decomp+'.inputMatrix', force=True)
+    return decomp
+
+def makeUnitVector(vector, name=None):
+    name = name if name else vector
+    unitName = "uvec_"+vector.split("_",1)[-1]
+    if objExists(unitName):
+        unit = unitName
+    else:
+        unit = duplicate(rr=1, ic=1, n=unitName)
+        setAttr(unitName+'.normalizeOutput', 1)
+    return unit
+
+def makeMagnitude(vector, name=None):
+    name = name if name else vector
+    nameBase = vector.split("_",1)[-1]
+    magnitudeName = "magvec_"+nameBase
+    selfDotName = 'sqmag_'+nameBase
+    if objExists(magnitudeName):
+        magnitude = magnitudeName
+    else:
+        selfDot =  createNode("vectorProduct", name=selfDotName)
+        setAttr(selfDot+'.operation', 1)
+        connectAttr(vector+'.output', selfDot+'.input1', force=True)
+        connectAttr(vector+'.output', selfDot+'.input2', force=True)
+        magnitude = createNode("multiplyDivide", name=magnitudeName)
+        setAttr(magnitude+'.operation', 3)
+        setAttr(magnitude+'.input2X', 0.5)
+        connectAttr(selfDot+'.outputX', magnitude+'.input1X', force=True)
+        addAttr(magnitude, shortName='mag', longName='magnitude', at="float" , keyable=0)
+        setAttr(magnitude+'.magnitude', channelBox=1)
+        connectAttr(magnitude+'.outputX',  magnitude+'.magnitude',force=True)
+    return magnitude
+
+def makePositionVector(object, name=None):
+    name = name if name else object
+    posName = "pvec_"+name
+    if objExists(posName):
+        pos = posName
+    else:
+        pos = createNode("vectorProduct", name=posName)
+        setAttr(pos+'.operation', 4)
+        connectAttr(object+'.worldMatrix[0]',  pos+'.matrix', force=True)
+        addAttr(pos, shortName='pos', longName='position', at="float3" , keyable=0)
+        for axis in ['X','Y','Z']:
+            addAttr(pos, shortName='pos'+axis, longName='position'+axis, at="float" , keyable=0, parent='position')
+        for axis in ['X','Y','Z']:
+            setAttr(pos+'.position'+axis, channelBox=1)
+        connectAttr(pos+'.output',  pos+'.position',force=True)
+    return pos
+
+def makeVectorAB(objectA, objectB, nameA=None, nameB=None):
+    nameA = nameA if nameA else objectA
+    nameB= nameB if nameB else objectB
+    vecABName = "vec_"+nameA+'_TO_'+nameB
+    if objExists(vecABName):
+        vecAB = vecABName
+    else:
+        vecAB = createNode("plusMinusAverage", name=vecABName)
+        setAttr(vecAB+'.operation', 2)
+        addAttr(vecAB, shortName='XYZ', longName='components', at="float3" , keyable=0)
+        for axis in ['X','Y','Z']:
+            addAttr(vecAB, shortName=axis, longName='component'+axis, at="float" , keyable=0, parent='components')
+        for axis in ['X','Y','Z']:
+            setAttr(vecAB+'.component'+axis, channelBox=1)
+        connectAttr(vecAB+'.output3D',  vecAB+'.components',force=True)
+        posA = makePositionVector(objectA, nameA)
+        posB = makePositionVector(objectB, nameB)
+        connectAttr(posB+'.output',  vecAB+'.input3D[0]',force=True)
+        connectAttr(posA+'.output',  vecAB+'.input3D[1]',force=True)
+    return vecAB
+
+def useReferenceFrame(object, targetFrame, mode, objectName=None, targetFrameName=None):
+    objectName = objectName if objectName else object
+    targetFrameName= targetFrameName if targetFrameName else targetFrame
+    resultName = objectName + "_IN_" + targetFrameName
+    if objExists(resultName):
+        result = resultName
+    else:
+        result = createNode("vectorProduct", name=resultName)
+        connectAttr(targetFrame+'.worldInverseMatrix', result+'.matrix', force=True)
+        if mode == "vec":
+            setAttr(result+'.operation', 3)
+            connectAttr(object+'.output3D', result+'.input1', force=True)
+        elif mode == "pvec":
+            setAttr(result+'.operation', 4)
+            connectAttr(object+'.output', result+'.input1', force=True)
+        addAttr(result, shortName='XYZ', longName='components', at="float3" , keyable=0)
+        for axis in ['X','Y','Z']:
+            addAttr(result, shortName=axis, longName='component'+axis, at="float" , keyable=0, parent='components')
+        for axis in ['X','Y','Z']:
+            setAttr(result+'.component'+axis, channelBox=1)
+        connectAttr(result+'.output',  result+'.components',force=True)
+    return result
+
+def getOtherData(originTransform, spineStartJoint, spineEndJoint, sternalJoint, shoulderJoint, elbowJoint, wristJoint):
     # make body reference frame in foreceplate reference frame
     spineLoc = spaceLocator(name="spineLoc")
+    sternalLoc = spaceLocator(name="sternalLoc")
     wholeAnimalLoc = spaceLocator(name="animal")
-    parent(spineLoc, wholeAnimalLoc, originTransform)
+    parent(spineLoc, sternalLoc, wholeAnimalLoc, originTransform)
     originUp = getAttr(originTransform+'.worldMatrix')*dt.Vector(0,1,0)
     pointConstraint(spineEndJoint, spineLoc)
+    pointConstraint(sternalJoint, sternalLoc)
     pointConstraint(sternalJoint, wholeAnimalLoc)
     aimConstraint(spineStartJoint, spineLoc, upVector=originUp)
     orientConstraint(spineLoc,wholeAnimalLoc)
-    # get shoulder height in forceplate reference frame
-    shoulderMultMatrix = createNode("multMatrix", name="shoulderMultMatrix_dummyNode")
-    shoulderDecomposeMatrix = createNode("decomposeMatrix", name="shoulderDecomposeMatrix_dummyNode")
-    connectAttr(shoulderJoint+'.worldMatrix[0]',  shoulderMultMatrix+'.matrixIn[0]')
-    connectAttr(originTransform+'.worldInverseMatrix[0]',  shoulderMultMatrix+'.matrixIn[1]')
-    connectAttr(shoulderMultMatrix+'.matrixSum',  shoulderDecomposeMatrix+'.inputMatrix')
-    # translateZ of shoulderDecompose is shoulder height
-
-    #get shoulder width: subtract shoulder position from body position, get vector in body reference frame
-
-    #get hand width: subtract wrist position from body position, get vector in body reference frame
-
+    orientConstraint(sternalJoint,sternalLoc)
+    # get shoulder position in forceplate reference frame
+    shoulderPos = makePositionVector(shoulderJoint, name='glenoid')
+    shoulderPosInForceplate = useReferenceFrame(shoulderPos, originTransform, 'pvec', targetFrameName='forcePlate')
+    #get shoulder width in animal reference frame
+    animalShoulderVec = makeVectorAB(wholeAnimalLoc, shoulderJoint, nameA='animal', nameB='glenoid')
+    animalShoulderVecInAnimal = useReferenceFrame(animalShoulderVec, wholeAnimalLoc, 'vec', targetFrameName='animal')
+    #get elbow width in animal reference frame
+    animalElbowVec = makeVectorAB(wholeAnimalLoc, elbowJoint, nameA='animal', nameB='elbow')
+    animalElbowVecInAnimal = useReferenceFrame(animalElbowVec, wholeAnimalLoc, 'vec', targetFrameName='animal')
+    #get hand width in animal reference frame
+    animalWristVec = makeVectorAB(wholeAnimalLoc, wristJoint, nameA='animal', nameB='wrist')
+    animalWristVecInAnimal = useReferenceFrame(animalWristVec, wholeAnimalLoc, 'vec', targetFrameName='animal')
     #get spine bending: difference between body orientation and ic orientation
-
-    # returns mean velocity, mean body height, mean IGL, mean inter-hand distance, girdle rotation.
-    # create locators with .5 IGL, hand width, girdle rotation
-    # crop to time range
-    # select sternal jcs, wrist jcs, acromion acs
-    # key to new node
-    return
+    animalSternumDiff = makeOffsetMatrix(wholeAnimalLoc, sternalLoc, nameA="animal", nameB="sternum")
+    animalSternumDiffDecomp = makeDecomposeMatrix(animalSternumDiff)
+    #put new attributes on animal locator
+    addAttr(wholeAnimalLoc, shortName='sHt', longName='shoulderHeight', at="float" , keyable=0)
+    connectAttr(shoulderPosInForceplate+'.outputZ',  wholeAnimalLoc+'.shoulderHeight')
+    setAttr(wholeAnimalLoc+'.shoulderHeight', channelBox=1)
+    addAttr(wholeAnimalLoc, shortName='sWid', longName='shoulderWidth', at="float" , keyable=0)
+    connectAttr(animalShoulderVecInAnimal+'.outputY',  wholeAnimalLoc+'.shoulderWidth')
+    setAttr(wholeAnimalLoc+'.shoulderWidth', channelBox=1)
+    addAttr(wholeAnimalLoc, shortName='eWid', longName='elbowWidth', at="float" , keyable=0)
+    connectAttr(animalElbowVecInAnimal+'.outputY',  wholeAnimalLoc+'.elbowWidth')
+    setAttr(wholeAnimalLoc+'.elbowWidth', channelBox=1)
+    addAttr(wholeAnimalLoc, shortName='wWid', longName='wristWidth', at="float" , keyable=0)
+    connectAttr(animalWristVecInAnimal+'.outputY',  wholeAnimalLoc+'.wristWidth')
+    setAttr(wholeAnimalLoc+'.wristWidth', channelBox=1)
+    addAttr(wholeAnimalLoc, shortName='sBend', longName='spineBend', at="float" , keyable=0)
+    connectAttr(animalSternumDiffDecomp+'.outputRotateZ',  wholeAnimalLoc+'.spineBend')
+    setAttr(wholeAnimalLoc+'.spineBend', channelBox=1)
+    return wholeAnimalLoc
 
 def getPlaybackRange():
     timeRange = [playbackOptions(minTime=1, q=1),playbackOptions(maxTime=1, q=1)]
