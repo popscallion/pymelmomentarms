@@ -619,7 +619,7 @@ def quickExport(path, species):
         ])),
     ])
     vars = OrderedDict([
-        ('animal', xformList + ['shoulderHeight','shoulderWidth','elbowWidth','wristWidth','spineBend']),
+        ('animal', xformList + ['shoulderHeight','shoulderWidth','elbowWidth','wristWidth','spineBend','localGRFX','localGRFY','localGRFZ']),
         ('acromion', xformList),
         ('glenoid', xformList),
         ('elbow', xformList),
@@ -708,7 +708,7 @@ def keyForces(data, target, endFrame=None, mag=5):
     arrowXYZ = makeForceArrows(startLoc, {'XYZ':endLoc3D,'X':endLocX,'Y':endLocY,'Z':endLocZ}, {'XYZ':arrowScale,'X':XScale,'Y':YScale,'Z':ZScale}, 'GRF',alpha=0.75)
     parent(arrowXYZ, startLoc, r=True )
 
-def callGetOtherData(origin_field, spineStart_field, spineEnd_field, sternum_field, glenohumeral_field, elbow_field, wrist_field, *args):
+def callGetOtherData(origin_field, spineStart_field, spineEnd_field, sternum_field, glenohumeral_field, elbow_field, wrist_field, grfStart_field, grfEnd_field, *args):
     origin = textField(origin_field, q=1, tx=1)
     spineStart = textField(spineStart_field, q=1, tx=1)
     spineEnd = textField(spineEnd_field, q=1, tx=1)
@@ -716,7 +716,9 @@ def callGetOtherData(origin_field, spineStart_field, spineEnd_field, sternum_fie
     glenohumeral = textField(glenohumeral_field, q=1, tx=1)
     elbow = textField(elbow_field, q=1, tx=1)
     wrist = textField(wrist_field, q=1, tx=1)
-    getOtherData(origin, spineStart, spineEnd, sternum, glenohumeral, elbow, wrist)
+    GRF_start = textField(grfStart_field, q=1, tx=1)
+    GRF_end = textField(grfEnd_field, q=1, tx=1)
+    getOtherData(origin, spineStart, spineEnd, sternum, glenohumeral, elbow, wrist, GRF_start, GRF_end)
 
 def getOtherDataUI(speciesSel):
     def handleTegu(*args):
@@ -727,6 +729,8 @@ def getOtherDataUI(speciesSel):
         textField('glenohumeral_field', edit=1, text='IKscap:glenohumeral_j_roto')
         textField('elbow_field', edit=1, text='IKscap:elbow_j')
         textField('wrist_field', edit=1, text='IKscap:wrist_j')
+        textField('grfStart_field', edit=1, text='GRF_start')
+        textField('grfEnd_field', edit=1, text='GRF_data')
     def handleOpossum(*args):
         textField('origin_field', edit=1, text='IKscap:SEP87_roto')
         textField('start_field', edit=1, text='IKscap:skull_j_roto')
@@ -735,6 +739,8 @@ def getOtherDataUI(speciesSel):
         textField('glenohumeral_field', edit=1, text='IKscap:glenoid_j_roto')
         textField('elbow_field', edit=1, text='IKscap:elbow_j')
         textField('wrist_field', edit=1, text='IKscap:wrist_j')
+        textField('grfStart_field', edit=1, text='GRF_start')
+        textField('grfEnd_field', edit=1, text='GRF_data')
     def handleOrigin(*args):
         selection = ls(sl=1)
         textField('origin_field', edit=1, text=selection[0])
@@ -756,8 +762,14 @@ def getOtherDataUI(speciesSel):
     def handleWrist(*args):
         selection = ls(sl=1)
         textField('wrist_field', edit=1, text=selection[0])
+    def handleGRFstart(*args):
+        selection = ls(sl=1)
+        textField('grfStart_field', edit=1, text=selection[0])
+    def handleGRFend(*args):
+        selection = ls(sl=1)
+        textField('grfEnd_field', edit=1, text=selection[0])
     def handleRun(*args):
-        callGetOtherData(origin, spineStart, spineEnd, sternum, glenohumeral, elbow, wrist)
+        callGetOtherData(origin, spineStart, spineEnd, sternum, glenohumeral, elbow, wrist, GRF_start, GRF_end)
         deleteUI('other_window')
     if window('other_window',exists=1) == True:
         deleteUI('other_window')
@@ -802,6 +814,16 @@ def getOtherDataUI(speciesSel):
     text(label='Wrist')
     rowLayout(numberOfColumns=2, adjustableColumn=1)
     wrist = textField('wrist_field', text='')
+    button(label='Select currently selected', command = handleWrist)
+    setParent('..')
+    text(label='GRF start')
+    rowLayout(numberOfColumns=2, adjustableColumn=1)
+    GRF_start = textField('grfStart_field', text='')
+    button(label='Select currently selected', command = handleWrist)
+    setParent('..')
+    text(label='GRF end')
+    rowLayout(numberOfColumns=2, adjustableColumn=1)
+    GRF_end = textField('grfEnd_field', text='')
     button(label='Select currently selected', command = handleWrist)
     setParent('..')
     text(label='')
@@ -899,14 +921,15 @@ def momentAnalysisUI():
     defaultname = os.path.join(wd, basename+'_data.csv')
     if window('moment_window',exists=1) == True:
         deleteUI('moment_window')
-    mainWindow = window('moment_window', title='Import Forces',rtf=1, w=150, h=150)
+    mainWindow = window('moment_window', title='Moment Analysis Wizard',rtf=1, w=150, h=150)
     frameLayout(label='0) Select species.')
     rowColumnLayout(numberOfColumns=2)
     radios = radioCollection('speciesRadios')
     radioButton('tegu', label='Tegu', sl=True)
     radioButton('opossum', label='Opossum')
     setParent('..')
-    frameLayout(label='1) Key center of pressure location through all frames of interest.')
+    frameLayout(label='1) Manually key center of pressure location through all frames of interest.')
+    text(label='')
     setParent('..')
     frameLayout(label='2) Import ground reaction forces from .csv.')
     button(label='Import GRF', command=lambda *args: keyForcesUI())
@@ -915,19 +938,18 @@ def momentAnalysisUI():
     button(label='Bake and Save', command=handleBake)
     setParent('..')
     frameLayout(label='4) Key zero pose at frame -1 and (optional) clear existing JCS data')
-    rowLayout(numberOfColumns=2)
+    rowLayout(numberOfColumns=3)
     button(label='Zero joints', command=zeroForJCS)
+    text(label='')
     button(label='Clear JCS', command=clearKeyedJCS)
     setParent('..')
     frameLayout(label='5) Set joint coordinate systems for selected species (make sure XROMM shelf tools are installed)')
-    rowLayout(numberOfColumns=2)
     button(label='Set JCS', command=handleJCS)
     setParent('..')
     frameLayout(label='6) Create nodes to measure spine bending, shoulder height, and shoulder, elbow, and wrist width.')
     button(label='Create Nodes', command=handleNodes)
     setParent('..')
     frameLayout(label='7) Calculate elbow and shoulder moments')
-    rowLayout(numberOfColumns=2)
     button(label='Calculate moments', command=handleMoments)
     setParent('..')
     frameLayout(label='8) Export data')
@@ -1068,7 +1090,7 @@ def useReferenceFrame(object, targetFrame, mode, objectName=None, targetFrameNam
         connectAttr(result+'.output',  result+'.components',force=True)
     return result
 
-def getOtherData(originTransform, spineStartJoint, spineEndJoint, sternalJoint, shoulderJoint, elbowJoint, wristJoint):
+def getOtherData(originTransform, spineStartJoint, spineEndJoint, sternalJoint, shoulderJoint, elbowJoint, wristJoint, GRF_start, GRF_end):
     # make body reference frame in foreceplate reference frame
     spineLoc = spaceLocator(name="spineLoc")
     sternalLoc = spaceLocator(name="sternalLoc")
@@ -1096,6 +1118,9 @@ def getOtherData(originTransform, spineStartJoint, spineEndJoint, sternalJoint, 
     #get spine bending: difference between body orientation and ic orientation
     animalSternumDiff = makeOffsetMatrix(wholeAnimalLoc, sternalLoc, nameA="animal", nameB="sternum")
     animalSternumDiffDecomp = makeDecomposeMatrix(animalSternumDiff)
+    #get GRF vector in animal reference frame
+    grfVec = makeVectorAB(GRF_start, GRF_end)
+    grfVecInAnimal = useReferenceFrame(grfVec, wholeAnimalLoc, 'vec', targetFrameName='animal')
     #put new attributes on animal locator
     addAttr(wholeAnimalLoc, shortName='sHt', longName='shoulderHeight', at="float" , keyable=0)
     connectAttr(shoulderPosInForceplate+'.outputZ',  wholeAnimalLoc+'.shoulderHeight')
@@ -1112,6 +1137,12 @@ def getOtherData(originTransform, spineStartJoint, spineEndJoint, sternalJoint, 
     addAttr(wholeAnimalLoc, shortName='sBend', longName='spineBend', at="float" , keyable=0)
     connectAttr(animalSternumDiffDecomp+'.outputRotateZ',  wholeAnimalLoc+'.spineBend')
     setAttr(wholeAnimalLoc+'.spineBend', channelBox=1)
+    addAttr(wholeAnimalLoc, shortName='lGrf', longName='localGRF', at="float3" , keyable=0)
+    for axis in ['X','Y','Z']:
+        addAttr(wholeAnimalLoc, shortName='lGrf'+axis, longName='localGRF'+axis, at="float" , keyable=0, parent='localGRF')
+    for axis in ['X','Y','Z']:
+        setAttr(wholeAnimalLoc+'.localGRF'+axis, channelBox=1)
+    connectAttr(grfVecInAnimal+'.output',  wholeAnimalLoc+'.localGRF')
     return wholeAnimalLoc
 
 def getPlaybackRange():
